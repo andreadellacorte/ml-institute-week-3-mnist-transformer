@@ -4,7 +4,7 @@ import torch.nn.init as init
 import math
 
 class MNISTModel(nn.Module):
-    def __init__(self, emb_dim):
+    def __init__(self, emb_dim, num_classes):
         super(MNISTModel, self).__init__()
         self.flatten = nn.Flatten()
         self.fc1 = nn.Linear(28*28, emb_dim)
@@ -15,7 +15,7 @@ class MNISTModel(nn.Module):
         init.zeros_(self.fc1.bias)
 
         init.zeros_(self.fc2.weight)
-        init.constant_(self.fc2.bias, -math.log(10))  # Set bias for balanced logits
+        init.constant_(self.fc2.bias, -math.log(num_classes))  # Set bias for balanced logits
 
     def forward(self, x):
         x = self.flatten(x)

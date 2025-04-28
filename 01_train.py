@@ -6,11 +6,14 @@ from model import MNISTModel
 from datasets import load_dataset
 from torch.utils.data import DataLoader
 import math
+import matplotlib.pyplot as plt
 
-def verify_expected_loss(n_classes, model):
-    print("Verify expected initial loss")
+def verify_expected_loss(num_classes, emb_dim):
+    print("\nVerify expected initial loss")
 
-    expected_loss = -math.log(1 / n_classes)
+    model = MNISTModel(emb_dim, num_classes)
+
+    expected_loss = -math.log(1 / num_classes)
 
     model.eval()
     with torch.no_grad():
@@ -23,7 +26,7 @@ def verify_expected_loss(n_classes, model):
     print(f"Expected initial loss: {expected_loss:.6f}, Measured initial loss: {initial_loss.item():.6f}")
 
 def verify_input_independent_baseline(train_dataset, test_dataset, batch_size, emb_dim, learning_rate):
-    print("Verify input-independent baseline")
+    print("\nVerify input-independent baseline")
 
     zero_train_dataset = ZeroInputDataset(len(train_dataset), 10)
     zero_test_dataset = ZeroInputDataset(len(test_dataset), 10)
@@ -32,7 +35,7 @@ def verify_input_independent_baseline(train_dataset, test_dataset, batch_size, e
     zero_test_loader = DataLoader(zero_test_dataset, batch_size=batch_size, shuffle=False)
 
     # Train and evaluate the input-independent baseline
-    baseline_model = MNISTModel(emb_dim)
+    baseline_model = MNISTModel(emb_dim, num_classes=10)
     baseline_optimizer = torch.optim.Adam(baseline_model.parameters(), learning_rate)
     baseline_loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -71,14 +74,14 @@ def verify_input_independent_baseline(train_dataset, test_dataset, batch_size, e
         print(f'Baseline Epoch {epoch+1} | Train Loss: {avg_train_loss:.6f} | Test Loss: {avg_test_loss:.6f} | Test Accuracy: {accuracy:.6f}')
 
 def verify_overfit_small_dataset(train_dataset, emb_dim, learning_rate):
-    print("Verify we can Overfit a single batch of data")
+    print("\nVerify we can Overfit a single batch of data")
 
     # Create a small dataset with only two examples
     small_train_dataset = torch.utils.data.Subset(train_dataset, [0, 1])
     small_train_loader = DataLoader(small_train_dataset, batch_size=2, shuffle=False)
 
     # Initialize the overfit model
-    overfit_model = MNISTModel(emb_dim)
+    overfit_model = MNISTModel(emb_dim, num_classes=10)
     overfit_optimizer = torch.optim.Adam(overfit_model.parameters(), learning_rate)
     overfit_loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -131,8 +134,6 @@ def main():
     np.random.seed(random_seed)
     random.seed(random_seed)
 
-    model = MNISTModel(emb_dim=32)
-
     # Load MNIST dataset at hugging face ylecun/mnist
 
     mnist = load_dataset("ylecun/mnist")
@@ -148,50 +149,40 @@ def main():
     test_dataset = MNISTDataset(test_data['image'], test_data['label'])
 
     # Define hyperparameters
-
+    
     batch_size = 64
     emb_dim = 32
     learning_rate = 1e-3
+    num_classes = 10
 
     # Flight checks
 
-    print("Pre-training checks")
+    print("\n# Pre-training checks")
 
     # Calculate expected initial loss for CrossEntropyLoss
-    n_classes = 10
 
-    verify_expected_loss(n_classes, model)
+    verify_expected_loss(num_classes, emb_dim)
 
     verify_input_independent_baseline(train_dataset, test_dataset, batch_size, emb_dim, learning_rate)
 
     verify_overfit_small_dataset(train_dataset, emb_dim, learning_rate)
+
+    # Initialize the model
+    model = MNISTModel(emb_dim, num_classes)
 
     # DataLoaders
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-    model = MNISTModel(emb_dim)
     optimizer = torch.optim.Adam(model.parameters(), learning_rate)
     loss_fn = torch.nn.CrossEntropyLoss()
+
+    print("\n# Training the model")
 
     # Training and evaluation loop
     epochs = 5
     for epoch in range(epochs):
-        # Evaluation
-        model.eval()
-        correct = 0
-        total = 0
-        with torch.no_grad():
-            for images, labels in test_loader:
-                logits = model(images)
-                predictions = logits.argmax(dim=1)
-                correct += (predictions == labels).sum().item()
-                total += labels.size(0)
-        
-        accuracy = correct / total
-        print(f'Pre-Epoch {epoch+1} | Test Accuracy: {accuracy:.6f}')
-        
         model.train()
         total_loss = 0
         for images, labels in train_loader:
