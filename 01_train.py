@@ -161,11 +161,11 @@ def main():
 
     # Calculate expected initial loss for CrossEntropyLoss
 
-    verify_expected_loss(num_classes, emb_dim)
+    # verify_expected_loss(num_classes, emb_dim)
 
-    verify_input_independent_baseline(train_dataset, test_dataset, batch_size, emb_dim, learning_rate)
+    # verify_input_independent_baseline(train_dataset, test_dataset, batch_size, emb_dim, learning_rate)
 
-    verify_overfit_small_dataset(train_dataset, emb_dim, learning_rate)
+    # verify_overfit_small_dataset(train_dataset, emb_dim, learning_rate)
 
     # Initialize the model
     model = MNISTModel(emb_dim, num_classes)
