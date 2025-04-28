@@ -4,10 +4,10 @@ import torch.nn.init as init
 import math
 
 class MNISTModel(nn.Module):
-    def __init__(self, emb_dim, num_classes):
+    def __init__(self, emb_dim, num_classes, num_patches):
         super(MNISTModel, self).__init__()
         self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(28*28, emb_dim)
+        self.fc1 = nn.Linear(28*28 / num_patches, emb_dim)
         self.fc2 = nn.Linear(emb_dim, 10)
 
         # Initialize weights and biases

@@ -128,11 +128,25 @@ def verify_overfit_small_dataset(train_dataset, emb_dim, learning_rate):
     print("Predictions:", predictions_list)
 
 def main():
-    # Set random seed for reproducibility
+    # Define hyperparameters
+
     random_seed = 3407 # https://arxiv.org/abs/2109.08203
+    batch_size = 64
+    emb_dim = 32
+    learning_rate = 1e-3
+    num_classes = 10
+    num_patches = 16
+
+    # Set random seed for reproducibility
+
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
     random.seed(random_seed)
+
+    # Create Dataset instances
+
+    train_dataset = MNISTDataset(train_data['image'], train_data['label'], num_patches)
+    test_dataset = MNISTDataset(test_data['image'], test_data['label'], num_patches)
 
     # Load MNIST dataset at hugging face ylecun/mnist
 
@@ -143,32 +157,14 @@ def main():
     train_data = mnist['train']
     test_data = mnist['test']
 
-    # Create Dataset instances
-
-    train_dataset = MNISTDataset(train_data['image'], train_data['label'])
-    test_dataset = MNISTDataset(test_data['image'], test_data['label'])
-
-    # Define hyperparameters
-    
-    batch_size = 64
-    emb_dim = 32
-    learning_rate = 1e-3
-    num_classes = 10
-
     # Flight checks
-
-    print("\n# Pre-training checks")
-
-    # Calculate expected initial loss for CrossEntropyLoss
-
+    # print("\n# Pre-training checks")
     # verify_expected_loss(num_classes, emb_dim)
-
     # verify_input_independent_baseline(train_dataset, test_dataset, batch_size, emb_dim, learning_rate)
-
     # verify_overfit_small_dataset(train_dataset, emb_dim, learning_rate)
 
     # Initialize the model
-    model = MNISTModel(emb_dim, num_classes)
+    model = MNISTModel(emb_dim, num_classes, num_patches)
 
     # DataLoaders
 

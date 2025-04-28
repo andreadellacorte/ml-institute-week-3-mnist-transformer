@@ -3,7 +3,7 @@ import numpy as np
 
 # Define a custom Dataset class
 class MNISTDataset(torch.utils.data.Dataset):
-    def __init__(self, images, labels):
+    def __init__(self, images, labels, num_patches):
         self.images = torch.tensor(np.array([np.array(img) for img in images])).float().view(-1, 28*28) / 255.0  # normalize to [0,1]
         self.labels = torch.tensor(labels).long()
 
