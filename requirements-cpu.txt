@@ -4,3 +4,4 @@ torch
 torchvision
 wandb
 numpy<2
+opencv-python
