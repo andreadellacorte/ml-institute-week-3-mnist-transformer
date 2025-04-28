@@ -1,0 +1,7 @@
+matplotlib
+datasets
+torch==2.6.0
+torchvision
+wandb
+huggingface_hub[cli]
+sortedcontainers
