@@ -1,9 +1,9 @@
 import torch
 import random
+import pickle
 import numpy as np
 from dataset import MNISTDataset, ZeroInputDataset
 from model import MNISTModel
-from datasets import load_dataset
 from torch.utils.data import DataLoader
 import math
 import matplotlib.pyplot as plt
@@ -142,20 +142,59 @@ def main():
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
     random.seed(random_seed)
+    
+    # Extract training data
+
+    train_data = pickle.load(open("data/raw/small_train_data.pkl", "rb"))
+    test_data = pickle.load(open("data/raw/small_test_data.pkl", "rb"))
+
+    # Split each train_data['image'] of 28x28 pixles into 16 patches of 7x7 pixels
+    for i in range(len(train_data['image'])):
+        image = train_data['image'][i]
+        patches = []
+        for j in range(num_patches):
+            row_start = (j // 4) * 7
+            col_start = (j % 4) * 7
+            image = np.array(image)  # Convert to NumPy array
+            patch = image[row_start:row_start+7, col_start:col_start+7]
+            patches.append(patch)
+        train_data['image'][i] = np.array(patches)
+    
+    # Split each train_data['image'] of 28x28 pixles into 16 patches of 7x7 pixels
+    for i in range(len(test_data['image'])):
+        image = test_data['image'][i]
+        patches = []
+        for j in range(num_patches):
+            row_start = (j // 4) * 7
+            col_start = (j % 4) * 7
+            image = np.array(image)  # Convert to NumPy array
+            patch = image[row_start:row_start+7, col_start:col_start+7]
+            patches.append(patch)
+        test_data['image'][i] = np.array(patches)
+
+    # Visualize the first image and its 16 patches in both train_data and test_data
+    fig, axes = plt.subplots(4, 8, figsize=(16, 8))
+    fig.suptitle('First Image and its 16 Patches (Train Data on Left, Test Data on Right)', fontsize=16)
+
+    for i in range(num_patches):
+        # Train data patches
+        axes[i // 4, i % 4].imshow(train_data['image'][0][i], cmap='gray')
+        axes[i // 4, i % 4].axis('off')
+
+        # Test data patches
+        axes[i // 4, i % 4 + 4].imshow(test_data['image'][0][i], cmap='gray')
+        axes[i // 4, i % 4 + 4].axis('off')
+
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.show()
+
+    print("Train data #0:", train_data['image'][0])
+    print("Train data #0 shape:", train_data['image'][0].shape)    
 
     # Create Dataset instances
 
     train_dataset = MNISTDataset(train_data['image'], train_data['label'], num_patches)
     test_dataset = MNISTDataset(test_data['image'], test_data['label'], num_patches)
-
-    # Load MNIST dataset at hugging face ylecun/mnist
-
-    mnist = load_dataset("ylecun/mnist")
-
-    # Extract training data
-
-    train_data = mnist['train']
-    test_data = mnist['test']
 
     # Flight checks
     # print("\n# Pre-training checks")
