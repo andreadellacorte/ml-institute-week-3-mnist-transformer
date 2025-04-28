@@ -1,18 +1,24 @@
 import torch
+import torch.nn as nn
+import torch.nn.init as init
+import math
 
-class MNISTModel(torch.nn.Module):
+class MNISTModel(nn.Module):
     def __init__(self, emb_dim):
-        super().__init__()
-        self.feature_extractor = torch.nn.Sequential(
-            torch.nn.Flatten(),
-            torch.nn.Linear(28*28, 128),
-            torch.nn.ReLU(),
-            torch.nn.Linear(128, emb_dim),  # project to embedding space
-        )
-        self.emb_to_logits = torch.nn.Linear(emb_dim, 10)  # predict digits
-        self.emb_dim = emb_dim
+        super(MNISTModel, self).__init__()
+        self.flatten = nn.Flatten()
+        self.fc1 = nn.Linear(28*28, emb_dim)
+        self.fc2 = nn.Linear(emb_dim, 10)
+
+        # Initialize weights and biases
+        init.kaiming_uniform_(self.fc1.weight, nonlinearity='relu')
+        init.zeros_(self.fc1.bias)
+
+        init.zeros_(self.fc2.weight)
+        init.constant_(self.fc2.bias, -math.log(10))  # Set bias for balanced logits
 
     def forward(self, x):
-        features = self.feature_extractor(x)
-        logits = self.emb_to_logits(features)
-        return logits
+        x = self.flatten(x)
+        x = torch.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
