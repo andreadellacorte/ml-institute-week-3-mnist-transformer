@@ -53,7 +53,7 @@ for epoch in range(epochs):
             total += labels.size(0)
     
     accuracy = correct / total
-    print(f'Pre-Epoch {epoch+1} | Test Accuracy: {accuracy:.4f}')
+    print(f'Pre-Epoch {epoch+1} | Test Accuracy: {accuracy:.6f}')
     
     model.train()
     total_loss = 0
@@ -69,16 +69,21 @@ for epoch in range(epochs):
 
     avg_train_loss = total_loss / len(train_loader)
 
+    # Perform evaluation over the entire test set for correctness
     # Evaluation
     model.eval()
     correct = 0
     total = 0
+    total_loss = 0
     with torch.no_grad():
         for images, labels in test_loader:
             logits = model(images)
+            loss = loss_fn(logits, labels)
+            total_loss += loss.item() * labels.size(0)  # Accumulate loss weighted by batch size
             predictions = logits.argmax(dim=1)
             correct += (predictions == labels).sum().item()
             total += labels.size(0)
 
     accuracy = correct / total
-    print(f'Epoch {epoch+1} | Train Loss: {avg_train_loss:.4f} | Test Accuracy: {accuracy:.4f}')
+    avg_test_loss = total_loss / total
+    print(f'Epoch {epoch+1} | Train Loss: {avg_train_loss:.6f} | Test Loss: {avg_test_loss:.6f} | Test Accuracy: {accuracy:.6f}')
