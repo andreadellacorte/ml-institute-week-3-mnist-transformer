@@ -1,13 +1,17 @@
 import torch
+import random
+import numpy as np
 from dataset import MNISTDataset
 from model import MNISTModel
 from datasets import load_dataset
 from torch.utils.data import DataLoader, TensorDataset
 from PIL import Image
 
-# Default seed for reproducibility
-# https://arxiv.org/abs/2109.08203
-torch.manual_seed(3407)
+# Set random seed for reproducibility
+random_seed = 3407
+torch.manual_seed(random_seed)
+np.random.seed(random_seed)
+random.seed(random_seed)
 
 # Load MNIST dataset at hugging face ylecun/mnist
 mnist = load_dataset("ylecun/mnist")
