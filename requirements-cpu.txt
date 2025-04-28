@@ -1,0 +1,6 @@
+matplotlib
+datasets
+torch
+torchvision
+wandb
+numpy<2
