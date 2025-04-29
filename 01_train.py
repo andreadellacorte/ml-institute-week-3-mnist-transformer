@@ -3,7 +3,9 @@ import random
 import pickle
 import numpy as np
 from dataset import MNISTDataset, ZeroInputDataset
-from model import MNISTModel
+from model import ProjectionLayer
+from model import OutputLayer
+from model import TransformerEncoder
 from torch.utils.data import DataLoader
 import math
 import matplotlib.pyplot as plt
@@ -131,11 +133,12 @@ def main():
     # Define hyperparameters
 
     random_seed = 3407 # https://arxiv.org/abs/2109.08203
-    batch_size = 64
+    batch_size = 1024
     emb_dim = 64
     learning_rate = 1e-3
     num_classes = 10
-    num_patches = 196
+    num_patches = 16
+    epochs = 5
 
     # Set random seed for reproducibility
 
@@ -153,36 +156,13 @@ def main():
     train_dataset = MNISTDataset(train_data['image'], train_data['label'], num_patches)
     test_dataset = MNISTDataset(test_data['image'], test_data['label'], num_patches)
 
-    patches_per_size = int(math.sqrt(num_patches))
-
-    # Visualize the first image in both train_data and test_data
-    fig, axes = plt.subplots(patches_per_size, patches_per_size * 2, 
-                             figsize=(num_patches / 2, num_patches / 4))
-    fig.suptitle('Patched Test and Train First Image', fontsize=16)
-
-    for i in range(num_patches):
-        # Train data patches
-        ax_train = axes[i // patches_per_size, i % patches_per_size]
-        ax_train.imshow(train_dataset[0][0][i], cmap='gray')
-        ax_train.axis('off')
-        ax_train.set_xticks([])
-        ax_train.set_yticks([])
-        ax_train.set_frame_on(False)
-
-        # Test data patches
-        ax_test = axes[i // patches_per_size, i % patches_per_size + patches_per_size]
-        ax_test.imshow(test_dataset[0][0][i], cmap='gray')
-        ax_test.axis('off')
-        ax_test.set_xticks([])
-        ax_test.set_yticks([])
-        ax_test.set_frame_on(False)
-
-    plt.subplots_adjust(wspace=0.1, hspace=0.1)
-    plt.tight_layout(rect=[0.05, 0.05, 0.95, 0.95])
-    plt.show()
-
-    print("Train data #0 shape:", train_dataset[0][0].shape)
-    print("Test data #0 shape:", train_dataset[0][0].shape)
+    print("\n# Dataset statistics")
+    print(f"Train dataset size: {len(train_dataset)}")
+    print(f"Test dataset size: {len(test_dataset)}")
+    print(f"Image shape: {train_dataset[0][0].shape}")
+    print(f"Label shape: {train_dataset[0][1].shape}")
+    print(f"Number of patches: {num_patches}")
+    print(f"Number of classes: {num_classes}")
 
     # Flight checks
     # print("\n# Pre-training checks")
@@ -191,25 +171,36 @@ def main():
     # verify_overfit_small_dataset(train_dataset, emb_dim, learning_rate)
 
     # Initialize the model
-    model = MNISTModel(emb_dim, num_classes, num_patches)
+    projectionLayer = ProjectionLayer(emb_dim, num_patches)
+    encodersLayer = TransformerEncoder(emb_dim, num_heads=4, ff_dim=emb_dim*2, num_layers=3)
+    outputLayer = OutputLayer(emb_dim, num_classes)
 
     # DataLoaders
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size, shuffle=False)
 
-    optimizer = torch.optim.Adam(model.parameters(), learning_rate)
+    optimizer = torch.optim.Adam(
+        list(projectionLayer.parameters())
+        + list(encodersLayer.parameters())
+        + list(outputLayer.parameters()), learning_rate)
     loss_fn = torch.nn.CrossEntropyLoss()
 
     print("\n# Training the model")
 
     # Training and evaluation loop
-    epochs = 5
     for epoch in range(epochs):
-        model.train()
+        projectionLayer.train()
+        encodersLayer.train()
+        outputLayer.train()
         total_loss = 0
         for images, labels in train_loader:
-            logits = model(images)
+            projections = projectionLayer(images)
+
+            encoders_out = encodersLayer(projections)
+
+            logits = outputLayer(encoders_out)
+
             loss = loss_fn(logits, labels)
 
             optimizer.zero_grad()
@@ -222,13 +213,20 @@ def main():
 
         # Perform evaluation over the entire test set for correctness
         # Evaluation
-        model.eval()
+        projectionLayer.eval()
+        outputLayer.eval()
+        encodersLayer.eval()
         correct = 0
         total = 0
         total_loss = 0
         with torch.no_grad():
             for images, labels in test_loader:
-                logits = model(images)
+                projections = projectionLayer(images)
+
+                encoders_out = encodersLayer(projections)
+
+                logits = outputLayer(encoders_out)
+
                 loss = loss_fn(logits, labels)
                 total_loss += loss.item() * labels.size(0)  # Accumulate loss weighted by batch size
                 predictions = logits.argmax(dim=1)

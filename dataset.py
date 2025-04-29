@@ -14,7 +14,6 @@ class MNISTDataset(torch.utils.data.Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx):
-
         chunks_per_size = math.sqrt(self.num_patches)
 
         # throw error if num_patches is not a perfect square
@@ -37,9 +36,11 @@ class MNISTDataset(torch.utils.data.Dataset):
             col_start = (j % chunks_per_size) * pixels_per_chunk
             image = np.array(image)  # Convert to NumPy array
             patch = image[row_start:row_start+pixels_per_chunk, col_start:col_start+pixels_per_chunk]
-            patches.append(patch)
+            patches.append(patch.flatten())
 
-        return torch.tensor(patches), torch.tensor(label)
+        # Convert patches list to a single numpy array before creating a tensor
+        patches = np.array(patches)
+        return torch.tensor(patches, dtype=torch.float32), torch.tensor(label, dtype=torch.long)
 
 # Train an input-independent baseline
 # Create a DataLoader with all inputs set to zero
