@@ -24,9 +24,9 @@ class PositionalLayer(torch.nn.Module):
     def forward(self, x):
         return x + self.pos_embed
 
-class TransformerEncoder(torch.nn.Module):
+class EncodersLayer(torch.nn.Module):
     def __init__(self, emb_dim, num_heads, num_layers):
-        super(TransformerEncoder, self).__init__()
+        super(EncodersLayer, self).__init__()
         
         encoder_layer = torch.nn.TransformerEncoderLayer(
             d_model=emb_dim,

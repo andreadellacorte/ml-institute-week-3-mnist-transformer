@@ -5,7 +5,7 @@ import numpy as np
 from dataset import MNISTDataset, ZeroInputDataset
 from model import ProjectionLayer
 from model import PositionalLayer
-from model import TransformerEncoder
+from model import EncodersLayer
 from model import OutputLayer
 from torch.utils.data import DataLoader
 import math
@@ -57,7 +57,7 @@ def main():
     # Initialize the model
     projectionLayer = ProjectionLayer(config['emb_dim'], config['num_patches'])
     positionalLayer = PositionalLayer(config['emb_dim'], config['num_patches'])
-    encodersLayer = TransformerEncoder(config['emb_dim'], config['num_heads'], config['num_layers'])
+    encodersLayer = EncodersLayer(config['emb_dim'], config['num_heads'], config['num_layers'])
     outputLayer = OutputLayer(config['emb_dim'], config['num_classes'])
 
     # DataLoaders
