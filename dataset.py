@@ -4,11 +4,16 @@ import numpy as np
 
 # Define a custom Dataset class
 class MNISTDataset(torch.utils.data.Dataset):
-    def __init__(self, images, labels, num_patches):
+    def __init__(self, images, labels, normalize_dataset, num_patches):
         self.num_patches = num_patches
         # Convert images to a NumPy array during initialization
         self.images = np.array(images)
         self.labels = labels
+
+        if normalize_dataset:
+            self.mean = np.mean(self.images)
+            self.std = np.std(self.images)
+            self.images = (self.images - self.mean) / self.std  # Normalize images
 
     def __len__(self):
         return len(self.labels)

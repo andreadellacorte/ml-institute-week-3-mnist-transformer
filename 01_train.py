@@ -5,7 +5,8 @@ import numpy as np
 from dataset import MNISTDataset, ZeroInputDataset
 from model import ProjectionLayer
 from model import PositionalLayer
-from model import EncodersLayer
+from model import EncoderLayer
+from model import MyEncoderLayer
 from model import OutputLayer
 from torch.utils.data import DataLoader
 import math
@@ -16,14 +17,17 @@ def main():
 
     config = {
         'random_seed': 3407, # https://arxiv.org/abs/2109.08203
-        'batch_size': 1024,
+        'normalize_dataset': True,
+        'batch_size': 64,
         'emb_dim': 64,
+        'encoder_emb_dim': 24,
         'learning_rate': 0.003,
         'num_classes':  10,
-        'num_patches': 4,
+        'num_patches': 16,
         'num_heads': 4,
-        'num_layers': 2,
+        'num_layers': 4,
         'epochs': 1000,
+        'dataset_size': ''
     }
 
     # Set random seed for reproducibility
@@ -34,13 +38,13 @@ def main():
     
     # Extract training data
 
-    train_data = pickle.load(open("data/raw/small_train_data.pkl", "rb"))
-    test_data = pickle.load(open("data/raw/small_test_data.pkl", "rb"))
+    train_data = pickle.load(open(f"data/raw/{config['dataset_size']}train_data.pkl", "rb"))
+    test_data = pickle.load(open(f"data/raw/{config['dataset_size']}test_data.pkl", "rb"))
 
     # Create Dataset instances
 
-    train_dataset = MNISTDataset(train_data['image'], train_data['label'], config['num_patches'])
-    test_dataset = MNISTDataset(test_data['image'], test_data['label'], config['num_patches'])
+    train_dataset = MNISTDataset(train_data['image'], train_data['label'], config['normalize_dataset'], config['num_patches'])
+    test_dataset = MNISTDataset(test_data['image'], test_data['label'], config['normalize_dataset'], config['num_patches'])
 
     print("\n# Dataset statistics")
     print(f"Train dataset size: {len(train_dataset)}")
@@ -57,7 +61,10 @@ def main():
     # Initialize the model
     projectionLayer = ProjectionLayer(config['emb_dim'], config['num_patches'])
     positionalLayer = PositionalLayer(config['emb_dim'], config['num_patches'])
-    encodersLayer = EncodersLayer(config['emb_dim'], config['num_heads'], config['num_layers'])
+    # encoderLayer = EncoderLayer(config['emb_dim'], config['num_heads'])
+    encoderLayers = []
+    for i in range(config['num_layers']):
+        encoderLayers.append(MyEncoderLayer(config['emb_dim'], config['encoder_emb_dim']))
     outputLayer = OutputLayer(config['emb_dim'], config['num_classes'])
 
     # DataLoaders
@@ -68,7 +75,7 @@ def main():
     optimizer = torch.optim.Adam(
         list(projectionLayer.parameters())
         + list(positionalLayer.parameters())
-        + list(encodersLayer.parameters())
+        + [param for encoderLayer in encoderLayers for param in encoderLayer.parameters()]
         + list(outputLayer.parameters()), config['learning_rate'])
     loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -77,7 +84,9 @@ def main():
     # Training and evaluation loop
     for epoch in range(config['epochs']):
         projectionLayer.train()
-        encodersLayer.train()
+        positionalLayer.train()
+        for encoderLayer in encoderLayers:
+            encoderLayer.train()
         outputLayer.train()
         total_loss = 0
         for images, labels in train_loader:
@@ -85,7 +94,10 @@ def main():
 
             positionalLayer_out = positionalLayer(projections)
 
-            encoders_out = encodersLayer(positionalLayer_out)
+            encoders_out = positionalLayer_out
+
+            for encoderLayer in encoderLayers:
+                encoders_out = encoderLayer(encoders_out)
 
             logits = outputLayer(encoders_out)
 
@@ -102,8 +114,10 @@ def main():
         # Perform evaluation over the entire test set for correctness
         # Evaluation
         projectionLayer.eval()
+        positionalLayer.train()
+        for encoderLayer in encoderLayers:
+            encoderLayer.eval()
         outputLayer.eval()
-        encodersLayer.eval()
         correct = 0
         total = 0
         total_loss = 0
@@ -113,7 +127,9 @@ def main():
 
                 positionalLayer_out = positionalLayer(projections)
 
-                encoders_out = encodersLayer(positionalLayer_out)
+                encoders_out = positionalLayer_out
+                for encoderLayer in encoderLayers:
+                    encoders_out = encoderLayer(encoders_out)
 
                 logits = outputLayer(encoders_out)
 

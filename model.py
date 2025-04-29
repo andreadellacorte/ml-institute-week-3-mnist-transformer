@@ -1,6 +1,7 @@
 import torch
 import torch.nn.init as init
 import torch.nn.functional as F
+import numpy as np
 import math
 
 class ProjectionLayer(torch.nn.Module):
@@ -24,9 +25,9 @@ class PositionalLayer(torch.nn.Module):
     def forward(self, x):
         return x + self.pos_embed
 
-class EncodersLayer(torch.nn.Module):
+class EncoderLayer(torch.nn.Module):
     def __init__(self, emb_dim, num_heads, num_layers):
-        super(EncodersLayer, self).__init__()
+        super(EncoderLayer, self).__init__()
         
         encoder_layer = torch.nn.TransformerEncoderLayer(
             d_model=emb_dim,
@@ -40,6 +41,42 @@ class EncodersLayer(torch.nn.Module):
     def forward(self, x):
         return self.transformer_encoder(x)
 
+class MyEncoderLayer(torch.nn.Module):
+    def __init__(self, emb_dim, encoder_emb_dim):
+        super(MyEncoderLayer, self).__init__()
+
+        self.wV = torch.nn.Linear(emb_dim, encoder_emb_dim)
+        self.wK = torch.nn.Linear(emb_dim, encoder_emb_dim)
+        self.wQ = torch.nn.Linear(emb_dim, encoder_emb_dim)
+        self.w0 = torch.nn.Linear(encoder_emb_dim, emb_dim)
+        self.encoder_emb_dim = encoder_emb_dim
+
+        # Initialize weights and biases
+        init.kaiming_uniform_(self.wV.weight, nonlinearity='relu')
+        init.zeros_(self.wV.bias)
+
+        init.kaiming_uniform_(self.wK.weight, nonlinearity='relu')
+        init.zeros_(self.wK.bias)
+
+        init.kaiming_uniform_(self.wQ.weight, nonlinearity='relu')
+        init.zeros_(self.wQ.bias)
+
+        init.kaiming_uniform_(self.w0.weight, nonlinearity='relu')
+        init.zeros_(self.w0.bias)
+
+    def forward(self, x):
+        v = self.wV(x)
+        k = self.wK(x)
+        q = self.wQ(x)
+
+        # calculate a from Q * K^T
+        scores = q @ k.transpose(-2, -1) / np.sqrt(self.encoder_emb_dim)
+        a = F.softmax(scores, dim=-1)
+
+        h = a @ v
+
+        return self.w0(h)
+
 class OutputLayer(torch.nn.Module):
     def __init__(self, emb_dim, num_classes):
         super(OutputLayer, self).__init__()
@@ -50,7 +87,6 @@ class OutputLayer(torch.nn.Module):
 
     def forward(self, x):
         # x is a matrix of (batch_size, num_patches, emb_dim)
-        # For every batch, take the first emb_dim out of num_patches
-        # and apply the linear layer
-        x = x[:, 0, :]
+        # Take the mean across the num_patches dimension
+        x = x.mean(dim=1)
         return self.linear(x)
