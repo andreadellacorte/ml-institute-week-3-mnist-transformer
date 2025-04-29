@@ -20,7 +20,7 @@ sweep_config = {
         'goal': 'maximize'
     },
     'parameters': {
-        'random_seed': {'values': [3407, 1234]},
+        'random_seed': {'values': [3407]},
         'normalize_dataset': {'values': [True, False]},
         'batch_size': {'values': [32, 64, 128, 256]},
         'emb_dim': {'values': [8, 16, 32, 64]},
