@@ -14,13 +14,13 @@ pickle.dump(test_data, open("data/raw/test_data.pkl", "wb"))
 # dump 100 images and labels in a smaller dataset
 
 small_train_data = {
-    'image': train_data['image'][:100],
-    'label': train_data['label'][:100]
+    'image': train_data['image'][:500],
+    'label': train_data['label'][:500]
 }
 small_test_data = {
-    'image': test_data['image'][:100],
-    'label': test_data['label'][:100]
+    'image': test_data['image'][:500],
+    'label': test_data['label'][:500]
 }
 
-pickle.dump(small_train_data, open("data/raw/small_train_data.pkl", "wb"))
-pickle.dump(small_test_data, open("data/raw/small_test_data.pkl", "wb"))
+pickle.dump(small_train_data, open("data/raw/medium_train_data.pkl", "wb"))
+pickle.dump(small_test_data, open("data/raw/medium_test_data.pkl", "wb"))

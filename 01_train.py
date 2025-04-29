@@ -4,147 +4,33 @@ import pickle
 import numpy as np
 from dataset import MNISTDataset, ZeroInputDataset
 from model import ProjectionLayer
-from model import OutputLayer
+from model import PositionalLayer
 from model import TransformerEncoder
+from model import OutputLayer
 from torch.utils.data import DataLoader
 import math
 import matplotlib.pyplot as plt
 
-def verify_expected_loss(num_classes, emb_dim):
-    print("\nVerify expected initial loss")
-
-    model = MNISTModel(emb_dim, num_classes)
-
-    expected_loss = -math.log(1 / num_classes)
-
-    model.eval()
-    with torch.no_grad():
-        dummy_input = torch.zeros((1, 1, 28, 28))  # Batch size 1, single-channel 28x28 image
-        logits = model(dummy_input)
-        loss_fn = torch.nn.CrossEntropyLoss()
-        dummy_target = torch.tensor([0])  # Arbitrary class label
-        initial_loss = loss_fn(logits, dummy_target)
-
-    print(f"Expected initial loss: {expected_loss:.6f}, Measured initial loss: {initial_loss.item():.6f}")
-
-def verify_input_independent_baseline(train_dataset, test_dataset, batch_size, emb_dim, learning_rate):
-    print("\nVerify input-independent baseline")
-
-    zero_train_dataset = ZeroInputDataset(len(train_dataset), 10)
-    zero_test_dataset = ZeroInputDataset(len(test_dataset), 10)
-
-    zero_train_loader = DataLoader(zero_train_dataset, batch_size=batch_size, shuffle=True)
-    zero_test_loader = DataLoader(zero_test_dataset, batch_size=batch_size, shuffle=False)
-
-    # Train and evaluate the input-independent baseline
-    baseline_model = MNISTModel(emb_dim, num_classes=10)
-    baseline_optimizer = torch.optim.Adam(baseline_model.parameters(), learning_rate)
-    baseline_loss_fn = torch.nn.CrossEntropyLoss()
-
-    for epoch in range(5):
-    # Training loop for baseline
-        baseline_model.train()
-        total_loss = 0
-        for images, labels in zero_train_loader:
-            logits = baseline_model(images)
-            loss = baseline_loss_fn(logits, labels)
-
-            baseline_optimizer.zero_grad()
-            loss.backward()
-            baseline_optimizer.step()
-
-            total_loss += loss.item()
-
-        avg_train_loss = total_loss / len(zero_train_loader)
-
-    # Evaluation loop for baseline
-        baseline_model.eval()
-        correct = 0
-        total = 0
-        total_loss = 0
-        with torch.no_grad():
-            for images, labels in zero_test_loader:
-                logits = baseline_model(images)
-                loss = baseline_loss_fn(logits, labels)
-                total_loss += loss.item() * labels.size(0)
-                predictions = logits.argmax(dim=1)
-                correct += (predictions == labels).sum().item()
-                total += labels.size(0)
-
-        accuracy = correct / total
-        avg_test_loss = total_loss / total
-        print(f'Baseline Epoch {epoch+1} | Train Loss: {avg_train_loss:.6f} | Test Loss: {avg_test_loss:.6f} | Test Accuracy: {accuracy:.6f}')
-
-def verify_overfit_small_dataset(train_dataset, emb_dim, learning_rate):
-    print("\nVerify we can Overfit a single batch of data")
-
-    # Create a small dataset with only two examples
-    small_train_dataset = torch.utils.data.Subset(train_dataset, [0, 1])
-    small_train_loader = DataLoader(small_train_dataset, batch_size=2, shuffle=False)
-
-    # Initialize the overfit model
-    overfit_model = MNISTModel(emb_dim, num_classes=10)
-    overfit_optimizer = torch.optim.Adam(overfit_model.parameters(), learning_rate)
-    overfit_loss_fn = torch.nn.CrossEntropyLoss()
-
-    # Train the model on the small dataset
-    for epoch in range(100):  # Train for more epochs to ensure overfitting
-        overfit_model.train()
-        total_loss = 0
-        for images, labels in small_train_loader:
-            logits = overfit_model(images)
-            loss = overfit_loss_fn(logits, labels)
-
-            overfit_optimizer.zero_grad()
-            loss.backward()
-            overfit_optimizer.step()
-
-            total_loss += loss.item()
-
-        avg_train_loss = total_loss / len(small_train_loader)
-
-        # Evaluate the model on the same small dataset
-        overfit_model.eval()
-        correct = 0
-        total = 0
-        predictions_list = []
-        labels_list = []
-        with torch.no_grad():
-            for images, labels in small_train_loader:
-                logits = overfit_model(images)
-                predictions = logits.argmax(dim=1)
-                predictions_list.extend(predictions.tolist())
-                labels_list.extend(labels.tolist())
-                correct += (predictions == labels).sum().item()
-                total += labels.size(0)
-
-        accuracy = correct / total
-        print(f'Overfit Epoch {epoch+1} | Train Loss: {avg_train_loss:.6f} | Accuracy: {accuracy:.6f}')
-
-        # Stop training if loss is near zero
-        if avg_train_loss < 1e-6:
-            break
-
-    # Visualize predictions and labels
-    print("Labels:", labels_list)
-    print("Predictions:", predictions_list)
-
 def main():
     # Define hyperparameters
 
-    random_seed = 3407 # https://arxiv.org/abs/2109.08203
-    batch_size = 1024
-    emb_dim = 64
-    learning_rate = 1e-3
-    num_classes = 10
-    num_patches = 16
-    epochs = 5
+    config = {
+        'random_seed': 3407, # https://arxiv.org/abs/2109.08203
+        'batch_size': 1024,
+        'emb_dim': 64,
+        'learning_rate': 0.003,
+        'num_classes':  10,
+        'num_patches': 4,
+        'num_heads': 4,
+        'num_layers': 2,
+        'epochs': 1000,
+    }
 
     # Set random seed for reproducibility
 
-    torch.manual_seed(random_seed)
-    np.random.seed(random_seed)
-    random.seed(random_seed)
+    torch.manual_seed(config['random_seed'])
+    np.random.seed(config['random_seed'])
+    random.seed(config['random_seed'])
     
     # Extract training data
 
@@ -153,16 +39,14 @@ def main():
 
     # Create Dataset instances
 
-    train_dataset = MNISTDataset(train_data['image'], train_data['label'], num_patches)
-    test_dataset = MNISTDataset(test_data['image'], test_data['label'], num_patches)
+    train_dataset = MNISTDataset(train_data['image'], train_data['label'], config['num_patches'])
+    test_dataset = MNISTDataset(test_data['image'], test_data['label'], config['num_patches'])
 
     print("\n# Dataset statistics")
     print(f"Train dataset size: {len(train_dataset)}")
     print(f"Test dataset size: {len(test_dataset)}")
     print(f"Image shape: {train_dataset[0][0].shape}")
     print(f"Label shape: {train_dataset[0][1].shape}")
-    print(f"Number of patches: {num_patches}")
-    print(f"Number of classes: {num_classes}")
 
     # Flight checks
     # print("\n# Pre-training checks")
@@ -171,25 +55,27 @@ def main():
     # verify_overfit_small_dataset(train_dataset, emb_dim, learning_rate)
 
     # Initialize the model
-    projectionLayer = ProjectionLayer(emb_dim, num_patches)
-    encodersLayer = TransformerEncoder(emb_dim, num_heads=4, ff_dim=emb_dim*2, num_layers=3)
-    outputLayer = OutputLayer(emb_dim, num_classes)
+    projectionLayer = ProjectionLayer(config['emb_dim'], config['num_patches'])
+    positionalLayer = PositionalLayer(config['emb_dim'], config['num_patches'])
+    encodersLayer = TransformerEncoder(config['emb_dim'], config['num_heads'], config['num_layers'])
+    outputLayer = OutputLayer(config['emb_dim'], config['num_classes'])
 
     # DataLoaders
 
-    train_loader = DataLoader(train_dataset, batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size, shuffle=False)
+    train_loader = DataLoader(train_dataset, config['batch_size'], shuffle=True)
+    test_loader = DataLoader(test_dataset, config['batch_size'], shuffle=False)
 
     optimizer = torch.optim.Adam(
         list(projectionLayer.parameters())
+        + list(positionalLayer.parameters())
         + list(encodersLayer.parameters())
-        + list(outputLayer.parameters()), learning_rate)
+        + list(outputLayer.parameters()), config['learning_rate'])
     loss_fn = torch.nn.CrossEntropyLoss()
 
     print("\n# Training the model")
 
     # Training and evaluation loop
-    for epoch in range(epochs):
+    for epoch in range(config['epochs']):
         projectionLayer.train()
         encodersLayer.train()
         outputLayer.train()
@@ -197,7 +83,9 @@ def main():
         for images, labels in train_loader:
             projections = projectionLayer(images)
 
-            encoders_out = encodersLayer(projections)
+            positionalLayer_out = positionalLayer(projections)
+
+            encoders_out = encodersLayer(positionalLayer_out)
 
             logits = outputLayer(encoders_out)
 
@@ -223,7 +111,9 @@ def main():
             for images, labels in test_loader:
                 projections = projectionLayer(images)
 
-                encoders_out = encodersLayer(projections)
+                positionalLayer_out = positionalLayer(projections)
+
+                encoders_out = encodersLayer(positionalLayer_out)
 
                 logits = outputLayer(encoders_out)
 
