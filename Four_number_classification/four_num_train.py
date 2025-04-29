@@ -72,6 +72,9 @@ class MultiDigitTransformer(nn.Module):
         # Positional embedding
         self.pos_embed = nn.Parameter(torch.randn(1, self.num_patches, emb_dim))
         
+        # Position-specific CLS tokens
+        self.cls_tokens = nn.Parameter(torch.randn(num_digits, 1, emb_dim))
+        
         # Transformer encoder
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=emb_dim,
@@ -106,15 +109,18 @@ class MultiDigitTransformer(nn.Module):
         # Add positional embedding
         x = x + self.pos_embed
         
-        # Transformer encoding
-        x = self.transformer(x)  # (B, num_patches, emb_dim)
+        # Add CLS tokens for each position
+        cls_tokens = self.cls_tokens.repeat(batch_size, 1, 1)  # (B, num_digits, emb_dim)
+        x = torch.cat([cls_tokens, x], dim=1)  # (B, num_digits + num_patches, emb_dim)
         
-        # Get predictions for each digit position
+        # Transformer encoding
+        x = self.transformer(x)  # (B, num_digits + num_patches, emb_dim)
+        
+        # Get predictions for each digit position using their specific CLS tokens
         outputs = []
-        for head in self.cls_heads:
-            # Use the first token for classification (like BERT's [CLS] token)
-            cls_token = x[:, 0, :]  # (B, emb_dim)
-            output = head(cls_token)  # (B, 10)
+        for i in range(self.num_digits):
+            cls_token = x[:, i, :]  # Get the i-th CLS token
+            output = self.cls_heads[i](cls_token)  # (B, 10)
             outputs.append(output)
             
         return torch.stack(outputs, dim=1)  # (B, num_digits, 10)
@@ -133,10 +139,11 @@ config = {
     "num_epochs": 20,
     "img_size": 56,  # 2x2 grid of 28x28 digits
     "patch_size": 7,
-    "emb_dim": 32,  # Reduced to be smaller than patch_size * patch_size (49)
+    "emb_dim": 64,  # Reduced to be smaller than patch_size * patch_size (49)
     "num_heads": 8,
     "num_layers": 4,
-    "num_digits": 4
+    "num_digits": 4,
+    "train_frac": 0.5  # Use half of the data for training
 }
 
 wandb.config.update(config)
@@ -152,7 +159,7 @@ mnist_dataset = datasets.MNIST(root='./data', train=True, download=True, transfo
 
 # Create multi-digit dataset
 multi_dataset = MultiMNISTDataset(mnist_dataset, num_digits=config["num_digits"], transform=transform)
-train_size = int(0.8 * len(multi_dataset))
+train_size = int(config["train_frac"] * len(multi_dataset))
 val_size = len(multi_dataset) - train_size
 train_dataset, val_dataset = torch.utils.data.random_split(multi_dataset, [train_size, val_size])
 
