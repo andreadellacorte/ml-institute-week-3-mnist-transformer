@@ -1,7 +1,6 @@
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='TRUE'
 
-# Import necessary libraries
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -15,16 +14,16 @@ import matplotlib.pyplot as plt
 
 # Configuration
 config = {
-    "batch_size": 64,
-    "learning_rate": 5e-4,
+    "batch_size": 32,
+    "learning_rate": 0.001,
     "num_epochs": 20,
     "img_size": 56,  # 2x2 grid of 28x28 digits
     "patch_size": 7,
-    "emb_dim": 128,  # Increased from 64 to 128 for better representation
-    "num_heads": 4,
+    "emb_dim": 64,
+    "num_heads": 8,
     "num_layers": 4,
     "num_digits": 4,
-    "train_frac": 0.2,  # Increased from 0.2 to 0.8 for more training data
+    "train_frac": 0.2
 }
 
 # Custom dataset for multiple MNIST digits
@@ -67,10 +66,51 @@ class MultiMNISTDataset(Dataset):
             
         return canvas, torch.tensor(digits)
 
+# Custom encoder class (similar to MyEncoder from simp_transform_setup.py)
+class MyEncoder(nn.Module):
+    def __init__(self, emb_dim=128, num_heads=8, num_layers=4):
+        super().__init__()
+        self.emb_dim = emb_dim
+        self.num_heads = num_heads
+        self.head_dim = emb_dim // num_heads
+        assert self.head_dim * num_heads == emb_dim, "emb_dim must be divisible by num_heads"
+        
+        # Linear projections for queries, keys, and values for all heads
+        self.wV = nn.Linear(emb_dim, emb_dim)
+        self.wQ = nn.Linear(emb_dim, emb_dim)
+        self.wK = nn.Linear(emb_dim, emb_dim)
+        self.wO = nn.Linear(emb_dim, emb_dim)
+        
+    def forward(self, x):
+        batch_size = x.size(0)
+        
+        # Project inputs to queries, keys, and values
+        V = self.wV(x)
+        Q = self.wQ(x)
+        K = self.wK(x)
+        
+        # Reshape for multi-head attention
+        V = V.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+        Q = Q.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+        K = K.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+        
+        # Compute attention scores
+        scores = (Q @ K.transpose(-2, -1)) / np.sqrt(self.head_dim)
+        A = torch.softmax(scores, dim=-1)
+        
+        # Apply attention to values
+        H = A @ V
+        
+        # Reshape back to original dimensions
+        H = H.transpose(1, 2).contiguous().view(batch_size, -1, self.emb_dim)
+        
+        # Final projection
+        O = self.wO(H)
+        return O
 
-# Multi-digit Transformer model
+# Multi-digit Transformer model using custom encoder
 class MultiDigitTransformer(nn.Module):
-    def __init__(self, img_size=56, patch_size=7, emb_dim=128, num_heads=8, num_layers=4, num_digits=4):
+    def __init__(self, img_size=56, patch_size=7, emb_dim=64, num_heads=8, num_layers=4, num_digits=4):
         super().__init__()
         self.num_digits = num_digits
         self.patch_size = patch_size
@@ -82,19 +122,9 @@ class MultiDigitTransformer(nn.Module):
 
         # Positional embedding
         self.pos_embed = nn.Parameter(torch.randn(1, self.num_patches, emb_dim))
-        
-        # Position-specific CLS tokens
-        self.cls_tokens = nn.Parameter(torch.randn(1, num_digits, emb_dim))
-        
-        # Transformer encoder
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=emb_dim,
-            nhead=num_heads,
-            dim_feedforward=emb_dim * 4,  # Increased feedforward dimension
-            activation='gelu',
-            batch_first=True
-        )
-        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+        # Use custom encoder
+        self.transformer = MyEncoder(emb_dim=emb_dim, num_heads=num_heads, num_layers=num_layers)
         
         # Classification heads (one for each digit position)
         self.cls_heads = nn.ModuleList([
@@ -102,7 +132,6 @@ class MultiDigitTransformer(nn.Module):
                 nn.LayerNorm(emb_dim),
                 nn.Linear(emb_dim, emb_dim),
                 nn.GELU(),
-                nn.Dropout(0.1),  # Added dropout for regularization
                 nn.Linear(emb_dim, 10)
             ) for _ in range(num_digits)
         ])
@@ -118,25 +147,22 @@ class MultiDigitTransformer(nn.Module):
 
         # Patch embedding + positional embedding
         x = self.patch_embed(x) + self.pos_embed  # shape: (batch_size, num_patches, emb_dim)
-        
-        # Add CLS tokens
-        cls_tokens = self.cls_tokens.expand(batch_size, -1, -1)  # (B, num_digits, emb_dim)
-        x = torch.cat([cls_tokens, x], dim=1)  # (B, num_digits + num_patches, emb_dim)
 
         # Transformer encoding
-        x = self.transformer(x)  # shape: (batch_size, num_digits + num_patches, emb_dim)
+        x = self.transformer(x)  # shape: (batch_size, num_patches, emb_dim)
 
-        # Get predictions for each digit position using their specific CLS tokens
+        # Get predictions for each digit position
         outputs = []
-        for i, head in enumerate(self.cls_heads):
-            cls_token = x[:, i, :]  # Get the i-th CLS token
+        for head in self.cls_heads:
+            # Use the first token for classification
+            cls_token = x[:, 0, :]  # (B, emb_dim)
             output = head(cls_token)  # (B, 10)
             outputs.append(output)
             
         return torch.stack(outputs, dim=1)  # (B, num_digits, 10)
 
 # Initialize wandb
-wandb.init(project="multi-digit-mnist", entity=None)
+wandb.init(project="multi-digit-mnist-custom", entity=None)
 
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -151,7 +177,7 @@ transform = transforms.Compose([
 ])
 
 # Load MNIST dataset
-mnist_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=None)  # No transform initially
+mnist_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=None)
 
 # Create multi-digit dataset
 multi_dataset = MultiMNISTDataset(mnist_dataset, num_digits=config["num_digits"], transform=transform)
@@ -175,58 +201,7 @@ model = MultiDigitTransformer(
 
 # Loss function and optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.AdamW(model.parameters(), lr=config["learning_rate"], weight_decay=0.01)
-
-# Add learning rate scheduler
-scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config["num_epochs"])
-
-# After creating the data loaders, before training starts
-# Get a single batch
-sample_batch = next(iter(train_loader))
-images, labels = sample_batch
-
-# Take the first image from the batch
-sample_image = images[0].squeeze().numpy()  # Remove channel dimension and convert to numpy
-
-# Create a figure to display the original image and its patches
-plt.figure(figsize=(15, 10))
-
-# Plot the original image
-plt.subplot(1, 2, 1)
-plt.imshow(sample_image, cmap='gray')
-plt.title('Original Image (56x56)')
-plt.axis('off')
-
-# Plot the patches
-plt.subplot(1, 2, 2)
-patch_size = 7
-num_patches = 8  # 56/7 = 8 patches per dimension
-patches = np.zeros((num_patches, num_patches, patch_size, patch_size))
-
-for i in range(num_patches):
-    for j in range(num_patches):
-        patches[i, j] = sample_image[i*patch_size:(i+1)*patch_size, j*patch_size:(j+1)*patch_size]
-
-# Create a grid of patches
-grid = np.vstack([np.hstack([patches[i, j] for j in range(num_patches)]) for i in range(num_patches)])
-
-plt.imshow(grid, cmap='gray')
-plt.title('Patches (7x7 each)')
-plt.axis('off')
-
-# Add grid lines to separate patches
-for i in range(1, num_patches):
-    plt.axvline(x=i*patch_size-0.5, color='red', linestyle='-', alpha=0.3)
-    plt.axhline(y=i*patch_size-0.5, color='red', linestyle='-', alpha=0.3)
-
-plt.tight_layout()
-plt.savefig('patch_visualization.png')
-plt.close()
-
-print("Patch visualization saved as 'patch_visualization.png'")
-print(f"Image shape: {sample_image.shape}")
-print(f"Number of patches: {num_patches}x{num_patches} = {num_patches*num_patches}")
-print(f"Patch size: {patch_size}x{patch_size}")
+optimizer = optim.Adam(model.parameters(), lr=config["learning_rate"])
 
 # Training function
 def train(model, train_loader, criterion, optimizer, device, epoch):
@@ -296,9 +271,6 @@ for epoch in range(config["num_epochs"]):
     train_loss, train_acc = train(model, train_loader, criterion, optimizer, device, epoch)
     val_loss, val_acc = validate(model, val_loader, criterion, device, epoch)
     
-    # Step the scheduler
-    scheduler.step()
-    
     print(f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%')
     print(f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
     
@@ -307,12 +279,11 @@ for epoch in range(config["num_epochs"]):
         "train_loss": train_loss,
         "train_accuracy": train_acc,
         "val_loss": val_loss,
-        "val_accuracy": val_acc,
-        "learning_rate": scheduler.get_last_lr()[0]
+        "val_accuracy": val_acc
     })
 
 # Save the model
-torch.save(model.state_dict(), 'multi_digit_transformer.pth')
-print("Model saved to multi_digit_transformer.pth")
+torch.save(model.state_dict(), 'multi_digit_transformer_custom.pth')
+print("Model saved to multi_digit_transformer_custom.pth")
 
-wandb.finish() 
+wandb.finish()

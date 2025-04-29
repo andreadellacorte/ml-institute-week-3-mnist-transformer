@@ -6,22 +6,43 @@ import numpy as np
 class MyEncoder(nn.Module):
     def __init__(self, emb_dim=128, weight_col=24, num_heads=8, num_layers=4):
         super().__init__()
-        self.emb_dim = emb_dim  # Store the embedding dimension
-        self.wV = nn.Linear(emb_dim, weight_col)
-        self.wQ = nn.Linear(emb_dim, weight_col)
-        self.wK = nn.Linear(emb_dim, weight_col)
-        self.wO = nn.Linear(weight_col, emb_dim)
-        self.weight_col = weight_col
+        self.emb_dim = emb_dim
+        self.num_heads = num_heads
+        self.head_dim = emb_dim // num_heads  # Dimension of each head
+        assert self.head_dim * num_heads == emb_dim, "emb_dim must be divisible by num_heads"
+        
+        # Linear projections for queries, keys, and values for all heads
+        self.wV = nn.Linear(emb_dim, emb_dim)  # Project to emb_dim for all heads
+        self.wQ = nn.Linear(emb_dim, emb_dim)  # Project to emb_dim for all heads
+        self.wK = nn.Linear(emb_dim, emb_dim)  # Project to emb_dim for all heads
+        self.wO = nn.Linear(emb_dim, emb_dim)  # Project back to emb_dim
         
     def forward(self, x):
-        V = self.wV(x)
-        Q = self.wQ(x)
-        K = self.wK(x)
-        d_k = self.emb_dim  # Use the stored embedding dimension
-        scores = Q @ K.transpose(-2, -1) / np.sqrt(d_k)  # shape: (batch, seq_len, seq_len)
-        A = torch.softmax(scores, dim=-1)                # attention weights
-        H = A @ V
-        O = self.wO(H)
+        batch_size = x.size(0)
+        x = (x - x.mean(dim=-1, keepdim=True)) / (x.std(dim=-1, keepdim=True) + 1e-6)
+        # Project inputs to queries, keys, and values
+        V = self.wV(x)  # (batch_size, seq_len, emb_dim)
+        Q = self.wQ(x)  # (batch_size, seq_len, emb_dim)
+        K = self.wK(x)  # (batch_size, seq_len, emb_dim)
+        
+        # Reshape for multi-head attention
+        # Split the embedding dimension into num_heads heads
+        V = V.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)  # (batch_size, num_heads, seq_len, head_dim)
+        Q = Q.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)  # (batch_size, num_heads, seq_len, head_dim)
+        K = K.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)  # (batch_size, num_heads, seq_len, head_dim)
+        
+        # Compute attention scores
+        scores = (Q @ K.transpose(-2, -1)) / np.sqrt(self.head_dim)  # (batch_size, num_heads, seq_len, seq_len)
+        A = torch.softmax(scores, dim=-1)  # attention weights
+        
+        # Apply attention to values
+        H = A @ V  # (batch_size, num_heads, seq_len, head_dim)
+        
+        # Reshape back to original dimensions
+        H = H.transpose(1, 2).contiguous().view(batch_size, -1, self.emb_dim)  # (batch_size, seq_len, emb_dim)
+        
+        # Final projection
+        O = self.wO(H)  # (batch_size, seq_len, emb_dim)
         return O
 
 class MNISTTransformer(nn.Module):

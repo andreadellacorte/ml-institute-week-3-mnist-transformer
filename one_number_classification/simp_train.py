@@ -88,6 +88,8 @@ wandb.watch(model, log="all")
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=config["learning_rate"])
 
+#print the number of parameters in the model
+print(f"Number of parameters in the model: {sum(p.numel() for p in model.parameters())}")
 # Training function for one epoch
 def train(model, train_loader, criterion, optimizer, device, epoch):
     model.train()  # Set model to training mode
