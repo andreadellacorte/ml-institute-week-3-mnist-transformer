@@ -4,9 +4,21 @@ import torch.nn as nn  # Neural network modules
 import torch.optim as optim  # Optimization algorithms
 from torchvision import datasets, transforms  # Datasets and image transformations
 from torch.utils.data import DataLoader  # Data loading utilities
-from simp_transform_setup import MNISTTransformer  # Our custom transformer model
+from simp_transform_setup import MNISTTransformer  # Import only MNISTTransformer
 import wandb  # Weights & Biases for experiment tracking
 import numpy as np  # Numerical computing
+
+# Ask user to choose model type
+print("\nChoose which model to use:")
+print("1. Library Transformer")
+print("2. Custom MyEncoder")
+choice = input("Enter 1 or 2: ")
+
+while choice not in ['1', '2']:
+    print("Invalid choice. Please enter 1 or 2.")
+    choice = input("Enter 1 or 2: ")
+
+option = 'my_own' if choice == '2' else 'library'
 
 # Initialize Weights & Biases for experiment tracking
 # This creates a new run in the specified project
@@ -28,7 +40,8 @@ config = {
     "emb_dim": 64,  # Dimension of the embedding space
     "num_heads": 4,  # Number of attention heads in the transformer
     "num_layers": 2,  # Number of transformer encoder layers
-    "num_classes": 10  # Number of output classes (digits 0-9)
+    "num_classes": 10,  # Number of output classes (digits 0-9)
+    "option": option  # Add the option parameter
 }
 
 # Log the configuration to Weights & Biases
@@ -53,15 +66,16 @@ test_dataset = datasets.MNIST(root='./data', train=False, download=True, transfo
 train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=config["batch_size"], shuffle=False)
 
-# Initialize the MNISTTransformer model with specified parameters
-# The model is moved to the specified device (GPU/CPU)
+# Initialize the model with the chosen option
+print(f"Using {'Custom MyEncoder' if option == 'my_own' else 'Library Transformer'} model")
 model = MNISTTransformer(
     img_size=config["img_size"],
     patch_size=config["patch_size"],
     emb_dim=config["emb_dim"],
     num_heads=config["num_heads"],
     num_layers=config["num_layers"],
-    num_classes=config["num_classes"]
+    num_classes=config["num_classes"],
+    option=option  # Pass the option parameter
 ).to(device)
 
 # Set up Weights & Biases to watch the model
@@ -167,8 +181,9 @@ for epoch in range(config["num_epochs"]):
 
 # Save the trained model
 # This saves only the model parameters, not the entire model
-torch.save(model.state_dict(), 'mnist_transformer.pth')
-print("Model saved to mnist_transformer.pth")
+model_save_name = f'mnist_transformer_{option}.pth'
+torch.save(model.state_dict(), model_save_name)
+print(f"Model saved to {model_save_name}")
 
 # Finish the Weights & Biases run
 wandb.finish()

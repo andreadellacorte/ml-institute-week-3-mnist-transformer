@@ -13,6 +13,21 @@ from PIL import Image
 import random
 import matplotlib.pyplot as plt
 
+# Configuration
+config = {
+    "batch_size": 32,
+    "learning_rate": 0.001,
+    "num_epochs": 20,
+    "img_size": 56,  # 2x2 grid of 28x28 digits
+    "patch_size": 7,
+    "emb_dim": 64,  # Reduced to be smaller than patch_size * patch_size (49)
+    "num_heads": 8,
+    "num_layers": 4,
+    "num_digits": 4,
+    "train_frac": 0.8,  # Fraction of data to use for training
+    "weight_col":24
+}
+
 # Custom dataset for multiple MNIST digits
 class MultiMNISTDataset(Dataset):
     def __init__(self, mnist_dataset, num_digits=4, transform=None):
@@ -53,6 +68,7 @@ class MultiMNISTDataset(Dataset):
             
         return canvas, torch.tensor(digits)
 
+
 # Multi-digit Transformer model
 class MultiDigitTransformer(nn.Module):
     def __init__(self, img_size=56, patch_size=7, emb_dim=128, num_heads=8, num_layers=4, num_digits=4):
@@ -71,9 +87,6 @@ class MultiDigitTransformer(nn.Module):
         
         # Positional embedding
         self.pos_embed = nn.Parameter(torch.randn(1, self.num_patches, emb_dim))
-        
-        # Position-specific CLS tokens
-        self.cls_tokens = nn.Parameter(torch.randn(num_digits, 1, emb_dim))
         
         # Transformer encoder
         encoder_layer = nn.TransformerEncoderLayer(
@@ -109,18 +122,15 @@ class MultiDigitTransformer(nn.Module):
         # Add positional embedding
         x = x + self.pos_embed
         
-        # Add CLS tokens for each position
-        cls_tokens = self.cls_tokens.repeat(batch_size, 1, 1)  # (B, num_digits, emb_dim)
-        x = torch.cat([cls_tokens, x], dim=1)  # (B, num_digits + num_patches, emb_dim)
-        
         # Transformer encoding
-        x = self.transformer(x)  # (B, num_digits + num_patches, emb_dim)
+        x = self.transformer(x)  # (B, num_patches, emb_dim)
         
-        # Get predictions for each digit position using their specific CLS tokens
+        # Get predictions for each digit position
         outputs = []
-        for i in range(self.num_digits):
-            cls_token = x[:, i, :]  # Get the i-th CLS token
-            output = self.cls_heads[i](cls_token)  # (B, 10)
+        for head in self.cls_heads:
+            # Use the first token for classification (like BERT's [CLS] token)
+            cls_token = x[:, 0, :]  # (B, emb_dim)
+            output = head(cls_token)  # (B, 10)
             outputs.append(output)
             
         return torch.stack(outputs, dim=1)  # (B, num_digits, 10)
@@ -131,20 +141,6 @@ wandb.init(project="multi-digit-mnist", entity=None)
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
-
-# Configuration
-config = {
-    "batch_size": 32,
-    "learning_rate": 0.001,
-    "num_epochs": 20,
-    "img_size": 56,  # 2x2 grid of 28x28 digits
-    "patch_size": 7,
-    "emb_dim": 256,  # Increased embedding dimension
-    "num_heads": 8,
-    "num_layers": 6,  # Increased number of layers
-    "num_digits": 4,
-    "train_frac": 0.2  # Use 80% of data for training
-}
 
 wandb.config.update(config)
 
