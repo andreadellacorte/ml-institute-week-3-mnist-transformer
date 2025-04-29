@@ -45,6 +45,7 @@ class MyEncoderLayer(torch.nn.Module):
     def __init__(self, emb_dim, encoder_emb_dim):
         super(MyEncoderLayer, self).__init__()
 
+        self.layer_norm = torch.nn.LayerNorm(emb_dim)
         self.wV = torch.nn.Linear(emb_dim, encoder_emb_dim)
         self.wK = torch.nn.Linear(emb_dim, encoder_emb_dim)
         self.wQ = torch.nn.Linear(emb_dim, encoder_emb_dim)
@@ -66,7 +67,8 @@ class MyEncoderLayer(torch.nn.Module):
 
     def forward(self, x):
         # normalise x
-        x = (x - x.mean(dim=-1, keepdim=True)) / (x.std(dim=-1, keepdim=True) + 1e-6)
+        
+        x = self.layer_norm(x)
 
         v = self.wV(x)
         k = self.wK(x)
@@ -90,6 +92,11 @@ class OutputLayer(torch.nn.Module):
 
     def forward(self, x):
         # x is a matrix of (batch_size, num_patches, emb_dim)
-        # Take the mean across the num_patches dimension
-        x = x.mean(dim=1)
+        # needs to be flattened to (batch_size, emb_dim)
+
+        # Either do the mean across the num_patches dimension
+        # x = x.mean(dim=1)
+
+        # or take the first patch
+        x = x[:, 0, :]
         return self.linear(x)

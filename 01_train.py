@@ -11,6 +11,7 @@ from model import OutputLayer
 from torch.utils.data import DataLoader
 import math
 import matplotlib.pyplot as plt
+import wandb
 
 def main():
     # Define hyperparameters
@@ -18,18 +19,21 @@ def main():
     config = {
         'random_seed': 3407, # https://arxiv.org/abs/2109.08203
         'normalize_dataset': True,
-        'batch_size': 64,
+        'batch_size': 256,
         'emb_dim': 64,
-        'encoder_emb_dim': 24,
+        'encoder_emb_dim': 64,
         'learning_rate': 0.003,
         'num_classes':  10,
-        'num_patches': 1,
+        'num_patches': 4,
         'num_heads': 1,
-        'num_layers': 1,
+        'num_layers': 4,
         'epochs': 1000,
-        'train_dataset_size': 'xl',
+        'train_dataset_size': 'full',
         'test_dataset_size': 'full',
     }
+
+    # Initialize Weights & Biases (wandb)
+    wandb.init(project="mlx7-week-3-mnist-transformer", config=config)
 
     # Set random seed for reproducibility
 
@@ -68,6 +72,9 @@ def main():
         encoderLayers.append(MyEncoderLayer(config['emb_dim'], config['encoder_emb_dim']))
     outputLayer = OutputLayer(config['emb_dim'], config['num_classes'])
 
+    # Log metrics to wandb
+    wandb.watch([projectionLayer, positionalLayer, *encoderLayers, outputLayer], log="all")
+
     # DataLoaders
 
     train_loader = DataLoader(train_dataset, config['batch_size'], shuffle=True)
@@ -85,10 +92,8 @@ def main():
     print(f"Encoder Layer: {encoderLayers[0]}")
     print(f"Output Layer: {outputLayer}")
     print(f"Optimizer: {optimizer}")
-    print(f"Train DataLoader: {train_loader}")
-    print(f"Test DataLoader: {test_loader}")
-    print(f"Train Dataset: {train_dataset}")
-    print(f"Test Dataset: {test_dataset}")
+    print(f"Number of parameters: {sum(p.numel() for p in projectionLayer.parameters()) + sum(p.numel() for p in positionalLayer.parameters()) + sum(p.numel() for encoderLayer in encoderLayers for p in encoderLayer.parameters()) + sum(p.numel() for p in outputLayer.parameters())}")
+    print(f"Loss function: CrossEntropyLoss")
 
     loss_fn = torch.nn.CrossEntropyLoss()
 
@@ -124,6 +129,9 @@ def main():
 
         avg_train_loss = total_loss / len(train_loader)
 
+        # Log training loss to wandb
+        wandb.log({"epoch": epoch + 1, "train_loss": avg_train_loss})
+
         # Perform evaluation over the entire test set for correctness
         # Evaluation
         projectionLayer.eval()
@@ -154,6 +162,10 @@ def main():
 
         accuracy = correct / total
         avg_test_loss = total_loss / total
+
+        # Log test metrics to wandb
+        wandb.log({"epoch": epoch + 1, "test_loss": avg_test_loss, "test_accuracy": accuracy})
+
         print(f'Epoch {epoch+1} | Train Loss: {avg_train_loss:.6f} | Test Loss: {avg_test_loss:.6f} | Test Accuracy: {accuracy:.6f}')
 
 if __name__ == "__main__":

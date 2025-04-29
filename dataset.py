@@ -6,7 +6,6 @@ import numpy as np
 class MNISTDataset(torch.utils.data.Dataset):
     def __init__(self, images, labels, normalize_dataset, num_patches):
         self.num_patches = num_patches
-        # Convert images to a NumPy array during initialization
         self.images = np.array(images)
         self.labels = labels
 
