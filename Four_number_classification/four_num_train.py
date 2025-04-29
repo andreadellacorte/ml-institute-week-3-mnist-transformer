@@ -139,11 +139,11 @@ config = {
     "num_epochs": 20,
     "img_size": 56,  # 2x2 grid of 28x28 digits
     "patch_size": 7,
-    "emb_dim": 64,  # Reduced to be smaller than patch_size * patch_size (49)
+    "emb_dim": 256,  # Increased embedding dimension
     "num_heads": 8,
-    "num_layers": 4,
+    "num_layers": 6,  # Increased number of layers
     "num_digits": 4,
-    "train_frac": 0.5  # Use half of the data for training
+    "train_frac": 0.2  # Use 80% of data for training
 }
 
 wandb.config.update(config)
