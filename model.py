@@ -65,6 +65,9 @@ class MyEncoderLayer(torch.nn.Module):
         init.zeros_(self.w0.bias)
 
     def forward(self, x):
+        # normalise x
+        x = (x - x.mean(dim=-1, keepdim=True)) / (x.std(dim=-1, keepdim=True) + 1e-6)
+
         v = self.wV(x)
         k = self.wK(x)
         q = self.wQ(x)

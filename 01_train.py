@@ -23,11 +23,12 @@ def main():
         'encoder_emb_dim': 24,
         'learning_rate': 0.003,
         'num_classes':  10,
-        'num_patches': 16,
-        'num_heads': 4,
-        'num_layers': 4,
+        'num_patches': 1,
+        'num_heads': 1,
+        'num_layers': 1,
         'epochs': 1000,
-        'dataset_size': ''
+        'train_dataset_size': 'xl',
+        'test_dataset_size': 'full',
     }
 
     # Set random seed for reproducibility
@@ -38,8 +39,8 @@ def main():
     
     # Extract training data
 
-    train_data = pickle.load(open(f"data/raw/{config['dataset_size']}train_data.pkl", "rb"))
-    test_data = pickle.load(open(f"data/raw/{config['dataset_size']}test_data.pkl", "rb"))
+    train_data = pickle.load(open(f"data/raw/{config['train_dataset_size']}_train_data.pkl", "rb"))
+    test_data = pickle.load(open(f"data/raw/{config['test_dataset_size']}_test_data.pkl", "rb"))
 
     # Create Dataset instances
 
@@ -77,6 +78,18 @@ def main():
         + list(positionalLayer.parameters())
         + [param for encoderLayer in encoderLayers for param in encoderLayer.parameters()]
         + list(outputLayer.parameters()), config['learning_rate'])
+    
+    print("\n# Model statistics")
+    print(f"Projection Layer: {projectionLayer}")
+    print(f"Positional Layer: {positionalLayer}")
+    print(f"Encoder Layer: {encoderLayers[0]}")
+    print(f"Output Layer: {outputLayer}")
+    print(f"Optimizer: {optimizer}")
+    print(f"Train DataLoader: {train_loader}")
+    print(f"Test DataLoader: {test_loader}")
+    print(f"Train Dataset: {train_dataset}")
+    print(f"Test Dataset: {test_dataset}")
+
     loss_fn = torch.nn.CrossEntropyLoss()
 
     print("\n# Training the model")
