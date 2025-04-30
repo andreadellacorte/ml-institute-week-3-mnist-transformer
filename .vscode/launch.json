@@ -6,7 +6,6 @@
         {
             "name": "Python: Train",
             "type": "python",
-            "preLaunchTask": "clear-terminal",
             "request": "launch",
             "module": "src.01_train",
             "justMyCode": false,

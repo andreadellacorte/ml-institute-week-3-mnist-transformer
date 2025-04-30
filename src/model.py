@@ -4,6 +4,20 @@ import torch.nn.functional as F
 import numpy as np
 import math
 
+class TransformerModel(torch.nn.Module):
+    def __init__(self, num_classes, emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism):
+        super(TransformerModel, self).__init__()
+
+        self.model = torch.nn.Sequential(
+            ProjectionLayer(emb_dim, num_patches),
+            PositionalLayer(emb_dim, num_patches),
+            *[MyEncoderLayer(emb_dim, encoder_emb_dim, masking, self_attending) for _ in range(num_layers)],
+            OutputLayer(emb_dim, num_classes, output_mechanism)
+        )
+
+    def forward(self, x):
+        return self.model(x)
+
 class ProjectionLayer(torch.nn.Module):
     def __init__(self, emb_dim, num_patches):
         super(ProjectionLayer, self).__init__()
@@ -50,9 +64,9 @@ class MyEncoderLayer(torch.nn.Module):
         self.masking = masking
 
         self.layer_norm = torch.nn.LayerNorm(emb_dim)
-        self.wV = torch.nn.Linear(emb_dim, encoder_emb_dim)
-        self.wK = torch.nn.Linear(emb_dim, encoder_emb_dim)
         self.wQ = torch.nn.Linear(emb_dim, encoder_emb_dim)
+        self.wK = torch.nn.Linear(emb_dim, encoder_emb_dim)
+        self.wV = torch.nn.Linear(emb_dim, encoder_emb_dim)
         self.w0 = torch.nn.Linear(encoder_emb_dim, emb_dim)
 
         # Initialize weights and biases

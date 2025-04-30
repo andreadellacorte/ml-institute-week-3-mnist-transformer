@@ -2,14 +2,9 @@ import torch
 import random
 import pickle
 import numpy as np
-from dataset import MNISTDataset, ZeroInputDataset
-from model import ProjectionLayer
-from model import PositionalLayer
-from model import EncoderLayer
-from model import MyEncoderLayer
-from model import OutputLayer
+from dataset import MNISTDataset
+from model import TransformerModel
 from torch.utils.data import DataLoader
-import matplotlib.pyplot as plt
 import wandb
 
 # Define the sweep configuration
@@ -109,32 +104,28 @@ def train():
     test_dataset = MNISTDataset(sweep_test_dataset['image'], sweep_test_dataset['label'], config['normalize_dataset'], config['num_patches'])
 
     # Initialize the model
-    projectionLayer = ProjectionLayer(config['emb_dim'], config['num_patches'])
-    positionalLayer = PositionalLayer(config['emb_dim'], config['num_patches'])
-    encoderLayers = []
-    for i in range(config['num_layers']):
-        encoderLayers.append(
-            MyEncoderLayer(
-                config['emb_dim'],
-                config['encoder_emb_dim'],
-                config['masking'],
-                config['self_attending']
-            )
-        )
-    outputLayer = OutputLayer(config['emb_dim'], num_classes, config['output_mechanism'])
+
+    transformerModel = TransformerModel(
+        num_classes,
+        config['emb_dim'],
+        config['num_patches'],
+        config['num_heads'],
+        config['num_layers'],
+        config['encoder_emb_dim'],
+        config['masking'],
+        config['self_attending'],
+        config['output_mechanism']
+    )
 
     # Log metrics to wandb
-    wandb.watch([projectionLayer, positionalLayer, *encoderLayers, outputLayer], log="all")
+    wandb.watch(transformerModel, log="all", log_graph=True)
 
     # DataLoaders
     train_loader = DataLoader(train_dataset, config['batch_size'], shuffle=True)
     test_loader = DataLoader(test_dataset, config['batch_size'], shuffle=False)
 
     optimizer = torch.optim.Adam(
-        list(projectionLayer.parameters())
-        + list(positionalLayer.parameters())
-        + [param for encoderLayer in encoderLayers for param in encoderLayer.parameters()]
-        + list(outputLayer.parameters()),
+        list(transformerModel.parameters()),
         lr=config['learning_rate'],
         weight_decay=config['weight_decay'])
     
@@ -142,23 +133,10 @@ def train():
 
     # Training and evaluation loop
     for epoch in range(config['epochs']):
-        projectionLayer.train()
-        positionalLayer.train()
-        for encoderLayer in encoderLayers:
-            encoderLayer.train()
-        outputLayer.train()
+        transformerModel.train()
         total_loss = 0
         for images, labels in train_loader:
-            projections = projectionLayer(images)
-
-            positionalLayer_out = positionalLayer(projections)
-
-            encoders_out = positionalLayer_out
-
-            for encoderLayer in encoderLayers:
-                encoders_out = encoderLayer(encoders_out)
-
-            logits = outputLayer(encoders_out)
+            logits = transformerModel(images)
 
             loss = loss_fn(logits, labels)
 
@@ -175,25 +153,13 @@ def train():
 
         # Perform evaluation over the entire test set for correctness
         # Evaluation
-        projectionLayer.eval()
-        positionalLayer.train()
-        for encoderLayer in encoderLayers:
-            encoderLayer.eval()
-        outputLayer.eval()
+        transformerModel.eval()
         correct = 0
         total = 0
         total_loss = 0
         with torch.no_grad():
             for images, labels in test_loader:
-                projections = projectionLayer(images)
-
-                positionalLayer_out = positionalLayer(projections)
-
-                encoders_out = positionalLayer_out
-                for encoderLayer in encoderLayers:
-                    encoders_out = encoderLayer(encoders_out)
-
-                logits = outputLayer(encoders_out)
+                logits = transformerModel(images)
 
                 loss = loss_fn(logits, labels)
                 total_loss += loss.item() * labels.size(0)  # Accumulate loss weighted by batch size
