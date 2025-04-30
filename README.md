@@ -6,14 +6,27 @@ This week we are creating a model that, provided an image with a set of numbers,
 
 MNIST
 
-# Reference Videos
+# References
 
+## Repos
+
+- [https://github.com/besarthoxhaj/attention](besarthoxhaj/attention)
+
+## Docs
+
+- [https://karpathy.github.io/2019/04/25/recipe/](A Recipe for Training Neural Networks)
+
+## Videos
 - [ ] [https://www.youtube.com/watch?v=dichIcUZfOw](Visual Guide to Transformer Neural Networks - (Episode 1) Position Embeddings)
 - [ ] [https://www.youtube.com/watch?v=wjZofJX0v4M&t=203s](Transformers (how LLMs work) explained visually | DL5)
 - [ ] [https://www.youtube.com/watch?si=iIYQixHB01MZEOpf](Vision Transformer made easy: a short tutorial)
 - [ ] [https://www.youtube.com/watch?v=eMlx5fFNoYc](Attention in transformers, step-by-step | DL6)
 - [ ] [https://medium.com/data-science/implementing-vision-transformer-vit-from-scratch-3e192c6155f0](Implementing Vision Transformer (ViT) from Scratch)
 - [ ] [https://www.youtube.com/watch?v=Vonyoz6Yt9c](Implement and Train ViT From Scratch for Image Recognition - PyTorch)
+
+Prior study
+
+- [ ] [https://www.youtube.com/watch?v=VMj-3S1tku0&list=PLAqhIrjkxbuWI23v9cThsA9GvCAUhRvKZ](Neural Networks: Zero to Hero)
 
 # TODOs
 
