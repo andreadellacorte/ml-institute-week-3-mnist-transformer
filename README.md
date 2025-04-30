@@ -24,6 +24,7 @@ MNIST
 - [ ] [https://medium.com/data-science/implementing-vision-transformer-vit-from-scratch-3e192c6155f0](Implementing Vision Transformer (ViT) from Scratch)
 - [ ] [https://www.youtube.com/watch?v=Vonyoz6Yt9c](Implement and Train ViT From Scratch for Image Recognition - PyTorch)
 - [ ] [https://chatgpt.com/share/680f573d-7ebc-8007-b31d-238be748b172](ChatGPT video)
+- [ ] [https://www.youtube.com/watch?v=TrdevFK_am4](An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale (Paper Explained))
 
 Prior study
 
@@ -43,7 +44,7 @@ Prior study
   - [X] Multi-head
   - [ ] Residuals / Norm / MLP
 - [ ] Evaluate performance single digit
-- [ ] Multi-digit dataset prep
+- [ ] Multi-digit dataset prep ([https://github.com/YuriiOks/mlx-w3-mnist-transformer/blob/feat/phase3-sequence-gen/src/mnist_transformer/dataset.py](example))
 - [ ] Multi-digit dataset to decoder integration
 - [ ] Encoder / Decoder integration
 - [ ] Evaluate performance
@@ -56,14 +57,17 @@ Prior study
 ## Experiments
 
 - [ ] Compare results of hugging face vs pytorch dataset MNIST
+  - [X] Integrate multi-data download
 - [x] Use sequential module to refactor independent models into one
-- [ ] Replace my unfold function with nn.unfold (thanks again <@1337087693401751697> for showing me)
+- [ ] Replace my unfold function with nn.unfold (thanks again @DanielBryars for showing me)
 
 ## Tooling
 
 - [x] wandb integration
 - [x] wandb sweep
+- [ ] learn python typing (e.g., `from typing import Tuple` + functions signatures `-> Tuple`)
 
 ## Follow ups
 
 - [ ] [Scattered digits](https://github.com/guillaumeboniface/mnist_transformer/blob/3d1349b55d2590a7c319330cf97c432ba8c80b63/dataset.py#L53)
+- [ ] [Augmented Digits](https://github.com/YuriiOks/mlx-w3-mnist-transformer/blob/feat/phase3-sequence-gen/src/mnist_transformer/dataset.py)
