@@ -50,7 +50,7 @@ sweep_config_single = {
         'weight_decay': {'values': [0.0]},
         'num_patches': {'values': [4]},
         'output_mechanism' : {'values': ['mean']},
-        'num_heads': {'values': [1]},
+        'num_heads': {'values': [1, 2, 4, 8, 16]},
         'num_layers': {'values': [1]},
         'epochs': {'values': [5]},
         'masking': {'values': [False]},

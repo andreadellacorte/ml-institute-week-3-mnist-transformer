@@ -11,7 +11,7 @@ class TransformerModel(torch.nn.Module):
         self.model = torch.nn.Sequential(
             ProjectionLayer(emb_dim, num_patches),
             PositionalLayer(emb_dim, num_patches),
-            *[MyEncoderLayer(emb_dim, encoder_emb_dim, masking, self_attending) for _ in range(num_layers)],
+            *[MyEncoderLayer(num_heads, emb_dim, encoder_emb_dim, masking, self_attending) for _ in range(num_layers)],
             OutputLayer(emb_dim, num_classes, output_mechanism)
         )
 
@@ -56,18 +56,19 @@ class EncoderLayer(torch.nn.Module):
         return self.transformer_encoder(x)
 
 class MyEncoderLayer(torch.nn.Module):
-    def __init__(self, emb_dim, encoder_emb_dim, masking, self_attending):
+    def __init__(self, num_heads, emb_dim, encoder_emb_dim, masking, self_attending):
         super(MyEncoderLayer, self).__init__()
 
+        self.num_heads = num_heads
         self.encoder_emb_dim = encoder_emb_dim
         self.self_attending = self_attending
         self.masking = masking
 
         self.layer_norm = torch.nn.LayerNorm(emb_dim)
-        self.wQ = torch.nn.Linear(emb_dim, encoder_emb_dim)
-        self.wK = torch.nn.Linear(emb_dim, encoder_emb_dim)
-        self.wV = torch.nn.Linear(emb_dim, encoder_emb_dim)
-        self.w0 = torch.nn.Linear(encoder_emb_dim, emb_dim)
+        self.wQ = torch.nn.Linear(emb_dim, encoder_emb_dim * num_heads)
+        self.wK = torch.nn.Linear(emb_dim, encoder_emb_dim * num_heads)
+        self.wV = torch.nn.Linear(emb_dim, encoder_emb_dim * num_heads)
+        self.w0 = torch.nn.Linear(encoder_emb_dim * num_heads, emb_dim)
 
         # Initialize weights and biases
         init.kaiming_uniform_(self.wV.weight, nonlinearity='relu')
@@ -83,12 +84,14 @@ class MyEncoderLayer(torch.nn.Module):
         init.zeros_(self.w0.bias)
 
     def forward(self, x):
-        # normalise x
+        # Normalize x
         x = self.layer_norm(x)
 
-        q = self.wQ(x)
-        k = self.wK(x)
-        v = self.wV(x)
+        batch_size, seq_len, _ = x.size()
+
+        q = self.wQ(x).view(batch_size, seq_len, self.num_heads, self.encoder_emb_dim).transpose(1, 2)
+        k = self.wK(x).view(batch_size, seq_len, self.num_heads, self.encoder_emb_dim).transpose(1, 2)
+        v = self.wV(x).view(batch_size, seq_len, self.num_heads, self.encoder_emb_dim).transpose(1, 2)
 
         # Calculate attention scores from Q * K^T
         scores = q @ k.transpose(-2, -1) / (math.sqrt(self.encoder_emb_dim) + 1e-9)
@@ -114,6 +117,7 @@ class MyEncoderLayer(torch.nn.Module):
         a = F.softmax(scores, dim=-1)
 
         h = a @ v
+        h = h.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
 
         return self.w0(h)
 
