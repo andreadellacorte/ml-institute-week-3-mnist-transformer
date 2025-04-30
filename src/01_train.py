@@ -6,28 +6,30 @@ from dataset import MNISTDataset
 from model import TransformerModel
 from torch.utils.data import DataLoader
 import wandb
+import time
 
 # Define the sweep configuration
-sweep_config_massive = {
+sweep_config_full = {
     'method': 'grid',
     'metric': {
         'name': 'test_accuracy',
         'goal': 'maximize'
     },
     'parameters': {
-        'train_dataset_size': {'values': ['m', 'l', 'xl', 'xxl', 'full']},
+        'dataset_type': {'values': ['huggingface']},
+        'train_dataset_size': {'values': ['5000']},
         'test_dataset_size': {'values': ['full']},
         'normalize_dataset': {'values': [True, False]},
-        'batch_size': {'values': [32, 64, 128, 256]},
-        'emb_dim': {'values': [8, 16, 32, 64]},
-        'encoder_emb_dim': {'values': [8, 16, 32, 64]},
-        'learning_rate': {'values': [0.001, 0.003, 0.005]},
+        'batch_size': {'values': [512]},
+        'emb_dim': {'values': [16, 32, 64, 128]},
+        'encoder_emb_dim': {'values': [16, 32, 64, 128]},
+        'learning_rate': {'values': [0.001, 0.002, 0.003, 0.005, 0.01]},
         'weight_decay': {'values': [0.0, 0.001, 0.01, 0.01, 0.1]},
         'output_mechanism': {'values': ['mean', 'first']},
-        'num_patches': {'values': [1, 4, 16, 196]},
-        'num_heads': {'values': [1]},
-        'num_layers': {'values': [1, 2, 3, 4]},
-        'epochs': {'values': [5]},
+        'num_patches': {'values': [4, 16, 196]},
+        'num_heads': {'values': [1, 2, 4, 8, 16]},
+        'num_layers': {'values': [1, 2, 4, 8, 16]},
+        'epochs': {'values': [10]},
         'masking': {'values': [False, True]},
         'self_attending': {'values': [False, True]},
     }
@@ -40,10 +42,11 @@ sweep_config_single = {
         'goal': 'maximize'
     },
     'parameters': {
-        'train_dataset_size': {'values': ['full']},
+        'dataset_type': {'values': ['huggingface', 'torchvision']},
+        'train_dataset_size': {'values': ['5000']},
         'test_dataset_size': {'values': ['full']},
         'normalize_dataset': {'values': [True]},
-        'batch_size': {'values': [32]},
+        'batch_size': {'values': [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]},
         'emb_dim': {'values': [64]},
         'encoder_emb_dim': {'values': [32]},
         'learning_rate': {'values': [0.001]},
@@ -51,29 +54,36 @@ sweep_config_single = {
         'num_patches': {'values': [4]},
         'output_mechanism' : {'values': ['mean']},
         'num_heads': {'values': [8]},
-        'num_layers': {'values': [1, 2,  4, 8, 16]},
+        'num_layers': {'values': [1]},
         'epochs': {'values': [5]},
         'masking': {'values': [False]},
         'self_attending': {'values': [True]},
     }
 }
 
-# Comment this
-sweep_config = sweep_config_single
+sweep_config = sweep_config_full
 
 print("Loading datasets...")
 
+
 # Extract all required training and testing data based on sweep_config
+required_dataset_types = set(sweep_config['parameters']['dataset_type']['values'])
 required_train_sizes = set(sweep_config['parameters']['train_dataset_size']['values'])
 required_test_sizes = set(sweep_config['parameters']['test_dataset_size']['values'])
 
 train_data = {
-    size: pickle.load(open(f"data/raw/{size}_train_data.pkl", "rb"))
-    for size in required_train_sizes
+    dataset_type: {
+        size: pickle.load(open(f"data/raw/{dataset_type}_{size}_train_data.pkl", "rb"))
+        for size in required_train_sizes
+    }
+    for dataset_type in required_dataset_types
 }
 test_data = {
-    size: pickle.load(open(f"data/raw/{size}_test_data.pkl", "rb"))
-    for size in required_test_sizes
+    dataset_type: {
+        size: pickle.load(open(f"data/raw/{dataset_type}_{size}_test_data.pkl", "rb"))
+        for size in required_test_sizes
+    }
+    for dataset_type in required_dataset_types
 }
 
 # Print the number of datasets loaded
@@ -96,8 +106,8 @@ def train():
     np.random.seed(random_seed)
     random.seed(random_seed)
 
-    sweep_train_dataset = train_data[config['train_dataset_size']]
-    sweep_test_dataset = test_data[config['test_dataset_size']]
+    sweep_train_dataset = train_data[config['dataset_type']][config['train_dataset_size']]
+    sweep_test_dataset = test_data[config['dataset_type']][config['test_dataset_size']]
     
     # Extract training data
     train_dataset = MNISTDataset(sweep_train_dataset['image'], sweep_train_dataset['label'], config['normalize_dataset'], config['num_patches'])
@@ -131,7 +141,14 @@ def train():
     
     print(f"Num of trainable parameters: {sum(p.numel() for p in transformerModel.parameters() if p.requires_grad)}")
 
+    # Log the number of trainable parameters to wandb
+    num_trainable_params = sum(p.numel() for p in transformerModel.parameters() if p.requires_grad)
+    wandb.log({"num_trainable_params": num_trainable_params})
+
     loss_fn = torch.nn.CrossEntropyLoss()
+
+    # Timing the training and evaluation loop
+    start_time = time.time()
 
     # Training and evaluation loop
     for epoch in range(config['epochs']):
@@ -176,6 +193,10 @@ def train():
         wandb.log({"epoch": epoch + 1, "test_loss": avg_test_loss, "test_accuracy": accuracy})
 
         print(f'Epoch {epoch+1} | Train Loss: {avg_train_loss:.6f} | Test Loss: {avg_test_loss:.6f} | Test Accuracy: {accuracy:.6f}')
+
+    # Log the total runtime to wandb
+    total_runtime = time.time() - start_time
+    wandb.log({"total_runtime": total_runtime})
 
 # Run the sweep agent
 wandb.agent(sweep_id, function=train)

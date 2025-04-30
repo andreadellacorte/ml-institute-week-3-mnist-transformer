@@ -1,6 +1,7 @@
 import torch
 import math
 import numpy as np
+from typing import Tuple
 
 # Define a custom Dataset class
 class MNISTDataset(torch.utils.data.Dataset):
@@ -14,10 +15,12 @@ class MNISTDataset(torch.utils.data.Dataset):
             self.std = np.std(self.images)
             self.images = (self.images - self.mean) / self.std  # Normalize images
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.labels)
 
-    def __getitem__(self, idx):
+    def __getitem__(self,
+                    idx: int
+        ) -> Tuple[torch.Tensor, torch.Tensor]:
         chunks_per_size = math.sqrt(self.num_patches)
 
         # throw error if num_patches is not a perfect square
@@ -45,18 +48,3 @@ class MNISTDataset(torch.utils.data.Dataset):
         # Convert patches list to a single numpy array before creating a tensor
         patches = np.array(patches)
         return torch.tensor(patches, dtype=torch.float32), torch.tensor(label, dtype=torch.long)
-
-# Train an input-independent baseline
-# Create a DataLoader with all inputs set to zero
-class ZeroInputDataset(torch.utils.data.Dataset):
-    def __init__(self, size, num_classes):
-        self.size = size
-        self.num_classes = num_classes
-
-    def __len__(self):
-        return self.size
-
-    def __getitem__(self, idx):
-        zero_input = torch.zeros(28*28)  # Input is all zeros
-        label = torch.randint(0, self.num_classes, (1,)).item()  # Random label
-        return zero_input, label
