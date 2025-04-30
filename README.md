@@ -23,6 +23,7 @@ MNIST
 - [ ] [https://www.youtube.com/watch?v=eMlx5fFNoYc](Attention in transformers, step-by-step | DL6)
 - [ ] [https://medium.com/data-science/implementing-vision-transformer-vit-from-scratch-3e192c6155f0](Implementing Vision Transformer (ViT) from Scratch)
 - [ ] [https://www.youtube.com/watch?v=Vonyoz6Yt9c](Implement and Train ViT From Scratch for Image Recognition - PyTorch)
+- [ ] [https://chatgpt.com/share/680f573d-7ebc-8007-b31d-238be748b172](ChatGPT video)
 
 Prior study
 

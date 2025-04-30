@@ -67,15 +67,20 @@ class MyEncoderLayer(torch.nn.Module):
 
     def forward(self, x):
         # normalise x
-        
         x = self.layer_norm(x)
 
-        v = self.wV(x)
-        k = self.wK(x)
         q = self.wQ(x)
+        k = self.wK(x)
+
+        v = self.wV(x)        
 
         # calculate a from Q * K^T
         scores = q @ k.transpose(-2, -1) / np.sqrt(self.encoder_emb_dim)
+
+        # Create a mask to set the bottom-left section of weights to -inf
+        mask = torch.tril(torch.ones(scores.size(-2), scores.size(-1)), diagonal=-1).bool()
+        scores = scores.masked_fill(mask, float('-inf'))
+
         a = F.softmax(scores, dim=-1)
 
         h = a @ v

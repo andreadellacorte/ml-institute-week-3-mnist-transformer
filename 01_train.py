@@ -36,8 +36,31 @@ sweep_config = {
     }
 }
 
+sweep_config_single = {
+    'method': 'grid',
+    'metric': {
+        'name': 'test_accuracy',
+        'goal': 'maximize'
+    },
+    'parameters': {
+        'random_seed': {'values': [3407]},
+        'normalize_dataset': {'values': [True]},
+        'batch_size': {'values': [32]},
+        'emb_dim': {'values': [64]},
+        'encoder_emb_dim': {'values': [32]},
+        'learning_rate': {'values': [0.001]},
+        'weight_decay': {'values': [0.0]},
+        'num_patches': {'values': [4]},
+        'num_heads': {'values': [1]},
+        'num_layers': {'values': [1]},
+        'epochs': {'values': [5]},
+        'train_dataset_size': {'values': ['full']},
+        'test_dataset_size': {'values': ['full']}
+    }
+}
+
 # Initialize the sweep
-sweep_id = wandb.sweep(sweep_config, project="mlx7-week-3-mnist-transformer")
+sweep_id = wandb.sweep(sweep_config_single, project="mlx7-week-3-mnist-transformer")
 
 num_classes = 10
 
