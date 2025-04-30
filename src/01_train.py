@@ -127,6 +127,10 @@ def train():
         config['output_mechanism']
     )
 
+    # Check for GPU availability
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    transformerModel = transformerModel.to(device)
+
     # Log metrics to wandb
     wandb.watch(transformerModel, log="all", log_graph=True)
 
@@ -155,6 +159,7 @@ def train():
         transformerModel.train()
         total_loss = 0
         for images, labels in train_loader:
+            images, labels = images.to(device), labels.to(device)
             logits = transformerModel(images)
 
             loss = loss_fn(logits, labels)
@@ -162,7 +167,7 @@ def train():
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            
+
             total_loss += loss.item()
 
         avg_train_loss = total_loss / len(train_loader)
@@ -171,13 +176,13 @@ def train():
         wandb.log({"epoch": epoch + 1, "train_loss": avg_train_loss})
 
         # Perform evaluation over the entire test set for correctness
-        # Evaluation
         transformerModel.eval()
         correct = 0
         total = 0
         total_loss = 0
         with torch.no_grad():
             for images, labels in test_loader:
+                images, labels = images.to(device), labels.to(device)
                 logits = transformerModel(images)
 
                 loss = loss_fn(logits, labels)
