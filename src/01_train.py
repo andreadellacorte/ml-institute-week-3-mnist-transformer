@@ -20,20 +20,21 @@ sweep_config_massive = {
         'goal': 'maximize'
     },
     'parameters': {
+        'train_dataset_size': {'values': ['m', 'l', 'xl', 'xxl', 'full']},
+        'test_dataset_size': {'values': ['full']},
         'normalize_dataset': {'values': [True, False]},
         'batch_size': {'values': [32, 64, 128, 256]},
         'emb_dim': {'values': [8, 16, 32, 64]},
         'encoder_emb_dim': {'values': [8, 16, 32, 64]},
         'learning_rate': {'values': [0.001, 0.003, 0.005]},
         'weight_decay': {'values': [0.0, 0.001, 0.01, 0.01, 0.1]},
-        'self_attending' : {'values': [False, True]},
-        'output_mechanism' : {'values': ['mean', 'first']},
+        'output_mechanism': {'values': ['mean', 'first']},
         'num_patches': {'values': [1, 4, 16, 196]},
         'num_heads': {'values': [1]},
         'num_layers': {'values': [1, 2, 3, 4]},
         'epochs': {'values': [5]},
-        'train_dataset_size': {'values': ['m', 'l', 'xl', 'xxl', 'full']},
-        'test_dataset_size': {'values': ['full']}
+        'masking': {'values': [False, True]},
+        'self_attending': {'values': [False, True]},
     }
 }
 
@@ -44,6 +45,8 @@ sweep_config_single = {
         'goal': 'maximize'
     },
     'parameters': {
+        'train_dataset_size': {'values': ['full']},
+        'test_dataset_size': {'values': ['full']},
         'normalize_dataset': {'values': [True]},
         'batch_size': {'values': [32]},
         'emb_dim': {'values': [64]},
@@ -51,13 +54,12 @@ sweep_config_single = {
         'learning_rate': {'values': [0.001]},
         'weight_decay': {'values': [0.0]},
         'num_patches': {'values': [4]},
-        'self_attending' : {'values': [True]},
-        'output_mechanism' : {'values': ['mean', 'first']},
+        'output_mechanism' : {'values': ['mean']},
         'num_heads': {'values': [1]},
         'num_layers': {'values': [1]},
         'epochs': {'values': [5]},
-        'train_dataset_size': {'values': ['full']},
-        'test_dataset_size': {'values': ['full']}
+        'masking': {'values': [False]},
+        'self_attending': {'values': [True]},
     }
 }
 
@@ -115,6 +117,7 @@ def train():
             MyEncoderLayer(
                 config['emb_dim'],
                 config['encoder_emb_dim'],
+                config['masking'],
                 config['self_attending']
             )
         )

@@ -42,11 +42,12 @@ class EncoderLayer(torch.nn.Module):
         return self.transformer_encoder(x)
 
 class MyEncoderLayer(torch.nn.Module):
-    def __init__(self, emb_dim, encoder_emb_dim, self_attending):
+    def __init__(self, emb_dim, encoder_emb_dim, masking, self_attending):
         super(MyEncoderLayer, self).__init__()
 
         self.encoder_emb_dim = encoder_emb_dim
         self.self_attending = self_attending
+        self.masking = masking
 
         self.layer_norm = torch.nn.LayerNorm(emb_dim)
         self.wV = torch.nn.Linear(emb_dim, encoder_emb_dim)
@@ -81,19 +82,20 @@ class MyEncoderLayer(torch.nn.Module):
         # Clamp attention scores to a reasonable range to prevent extreme values
         scores = torch.clamp(scores, min=-1e9, max=1e9)
 
-        if self.self_attending:
-            # Don't mask the diagonal to -inf
-            mask = torch.tril(torch.ones(scores.size(-2), scores.size(-1)), diagonal=-1).bool()
-        else:
-            # Mask the diagonal to -inf
-            mask = torch.tril(torch.ones(scores.size(-2), scores.size(-1))).bool()
+        if self.masking:
+            if self.self_attending:
+                # Don't mask the diagonal to -inf
+                mask = torch.tril(torch.ones(scores.size(-2), scores.size(-1)), diagonal=-1).bool()
+            else:
+                # Mask the diagonal to -inf
+                mask = torch.tril(torch.ones(scores.size(-2), scores.size(-1))).bool()
 
-        scores = scores.masked_fill(mask, float('-inf'))
+            scores = scores.masked_fill(mask, float('-inf'))
 
-        # If a column is all -inf, set it to 0 to avoid
-        # NaN values in the softmax
-        if self.self_attending is False:
-            scores = torch.where(torch.isinf(scores), torch.zeros_like(scores), scores)
+            # If a column is all -inf, set it to 0 to avoid
+            # NaN values in the softmax
+            if self.self_attending is False:
+                scores = torch.where(torch.isinf(scores), torch.zeros_like(scores), scores)
 
         a = F.softmax(scores, dim=-1)
 
@@ -119,7 +121,7 @@ class OutputLayer(torch.nn.Module):
         # needs to be flattened to (batch_size, emb_dim)
 
         # Either do the mean across the num_patches dimension
-        if self.outout_mechanism == "mean":
+        if self.output_mechanism == "mean":
             x = x.mean(dim=1)
 
         # or take the first patch

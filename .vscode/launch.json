@@ -1,0 +1,19 @@
+// launch src/01_train.py
+{
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Python: Train",
+            "type": "python",
+            "preLaunchTask": "clear-terminal",
+            "request": "launch",
+            "module": "src.01_train",
+            "justMyCode": false,
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
+        }
+    ]
+}
