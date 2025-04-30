@@ -102,9 +102,14 @@ class MyEncoderLayer(torch.nn.Module):
         return self.w0(h)
 
 class OutputLayer(torch.nn.Module):
-    def __init__(self, emb_dim, num_classes):
+    def __init__(self, emb_dim, num_classes, output_mechanism):
         super(OutputLayer, self).__init__()
+
+        if output_mechanism not in ["mean", "first"]:
+            raise ValueError("output_mechanism must be either 'mean' or 'first'")
+
         self.linear = torch.nn.Linear(emb_dim, num_classes)
+        self.output_mechanism = output_mechanism
 
         init.zeros_(self.linear.weight)
         init.constant_(self.linear.bias, -math.log(num_classes))  # Set bias for balanced logits
@@ -114,8 +119,11 @@ class OutputLayer(torch.nn.Module):
         # needs to be flattened to (batch_size, emb_dim)
 
         # Either do the mean across the num_patches dimension
-        # x = x.mean(dim=1)
+        if self.outout_mechanism == "mean":
+            x = x.mean(dim=1)
 
         # or take the first patch
-        x = x[:, 0, :]
+        if self.output_mechanism == "first":
+            x = x[:, 0, :]
+
         return self.linear(x)

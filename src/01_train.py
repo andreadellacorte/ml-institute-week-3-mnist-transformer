@@ -27,6 +27,7 @@ sweep_config_massive = {
         'learning_rate': {'values': [0.001, 0.003, 0.005]},
         'weight_decay': {'values': [0.0, 0.001, 0.01, 0.01, 0.1]},
         'self_attending' : {'values': [False, True]},
+        'output_mechanism' : {'values': ['mean', 'first']},
         'num_patches': {'values': [1, 4, 16, 196]},
         'num_heads': {'values': [1]},
         'num_layers': {'values': [1, 2, 3, 4]},
@@ -50,7 +51,8 @@ sweep_config_single = {
         'learning_rate': {'values': [0.001]},
         'weight_decay': {'values': [0.0]},
         'num_patches': {'values': [4]},
-        'self_attending' : {'values': [False, True]},
+        'self_attending' : {'values': [True]},
+        'output_mechanism' : {'values': ['mean', 'first']},
         'num_heads': {'values': [1]},
         'num_layers': {'values': [1]},
         'epochs': {'values': [5]},
@@ -116,7 +118,7 @@ def train():
                 config['self_attending']
             )
         )
-    outputLayer = OutputLayer(config['emb_dim'], num_classes)
+    outputLayer = OutputLayer(config['emb_dim'], num_classes, config['output_mechanism'])
 
     # Log metrics to wandb
     wandb.watch([projectionLayer, positionalLayer, *encoderLayers, outputLayer], log="all")
