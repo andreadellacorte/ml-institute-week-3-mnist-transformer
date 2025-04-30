@@ -13,20 +13,20 @@ import matplotlib.pyplot as plt
 import wandb
 
 # Define the sweep configuration
-sweep_config = {
+sweep_config_massive = {
     'method': 'grid',
     'metric': {
         'name': 'test_accuracy',
         'goal': 'maximize'
     },
     'parameters': {
-        'random_seed': {'values': [3407]},
         'normalize_dataset': {'values': [True, False]},
         'batch_size': {'values': [32, 64, 128, 256]},
         'emb_dim': {'values': [8, 16, 32, 64]},
         'encoder_emb_dim': {'values': [8, 16, 32, 64]},
         'learning_rate': {'values': [0.001, 0.003, 0.005]},
         'weight_decay': {'values': [0.0, 0.001, 0.01, 0.01, 0.1]},
+        'self_attending' : {'values': [False, True]},
         'num_patches': {'values': [1, 4, 16, 196]},
         'num_heads': {'values': [1]},
         'num_layers': {'values': [1, 2, 3, 4]},
@@ -43,7 +43,6 @@ sweep_config_single = {
         'goal': 'maximize'
     },
     'parameters': {
-        'random_seed': {'values': [3407]},
         'normalize_dataset': {'values': [True]},
         'batch_size': {'values': [32]},
         'emb_dim': {'values': [64]},
@@ -51,6 +50,7 @@ sweep_config_single = {
         'learning_rate': {'values': [0.001]},
         'weight_decay': {'values': [0.0]},
         'num_patches': {'values': [4]},
+        'self_attending' : {'values': [False, True]},
         'num_heads': {'values': [1]},
         'num_layers': {'values': [1]},
         'epochs': {'values': [5]},
@@ -59,10 +59,33 @@ sweep_config_single = {
     }
 }
 
-# Initialize the sweep
-sweep_id = wandb.sweep(sweep_config_single, project="mlx7-week-3-mnist-transformer")
+# Comment this
+sweep_config = sweep_config_single
 
+print("Loading datasets...")
+
+# Extract all required training and testing data based on sweep_config
+required_train_sizes = set(sweep_config['parameters']['train_dataset_size']['values'])
+required_test_sizes = set(sweep_config['parameters']['test_dataset_size']['values'])
+
+train_data = {
+    size: pickle.load(open(f"data/raw/{size}_train_data.pkl", "rb"))
+    for size in required_train_sizes
+}
+test_data = {
+    size: pickle.load(open(f"data/raw/{size}_test_data.pkl", "rb"))
+    for size in required_test_sizes
+}
+
+# Print the number of datasets loaded
+print(f"Loaded {len(train_data)} training datasets and {len(test_data)} testing datasets.")
+
+# Initialize the sweep
+sweep_id = wandb.sweep(sweep_config, project="mlx7-week-3-mnist-transformer")
+
+# Set parameters
 num_classes = 10
+random_seed = 3407
 
 def train():
     # Initialize a new wandb run
@@ -70,24 +93,29 @@ def train():
     config = wandb.config
 
     # Set random seed for reproducibility
-    torch.manual_seed(config['random_seed'])
-    np.random.seed(config['random_seed'])
-    random.seed(config['random_seed'])
+    torch.manual_seed(random_seed)
+    np.random.seed(random_seed)
+    random.seed(random_seed)
+
+    sweep_train_dataset = train_data[config['train_dataset_size']]
+    sweep_test_dataset = test_data[config['test_dataset_size']]
     
     # Extract training data
-    train_data = pickle.load(open(f"data/raw/{config['train_dataset_size']}_train_data.pkl", "rb"))
-    test_data = pickle.load(open(f"data/raw/{config['test_dataset_size']}_test_data.pkl", "rb"))    
-
-    # Create Dataset instances
-    train_dataset = MNISTDataset(train_data['image'], train_data['label'], config['normalize_dataset'], config['num_patches'])
-    test_dataset = MNISTDataset(test_data['image'], test_data['label'], config['normalize_dataset'], config['num_patches'])
+    train_dataset = MNISTDataset(sweep_train_dataset['image'], sweep_train_dataset['label'], config['normalize_dataset'], config['num_patches'])
+    test_dataset = MNISTDataset(sweep_test_dataset['image'], sweep_test_dataset['label'], config['normalize_dataset'], config['num_patches'])
 
     # Initialize the model
     projectionLayer = ProjectionLayer(config['emb_dim'], config['num_patches'])
     positionalLayer = PositionalLayer(config['emb_dim'], config['num_patches'])
     encoderLayers = []
     for i in range(config['num_layers']):
-        encoderLayers.append(MyEncoderLayer(config['emb_dim'], config['encoder_emb_dim']))
+        encoderLayers.append(
+            MyEncoderLayer(
+                config['emb_dim'],
+                config['encoder_emb_dim'],
+                config['self_attending']
+            )
+        )
     outputLayer = OutputLayer(config['emb_dim'], num_classes)
 
     # Log metrics to wandb
