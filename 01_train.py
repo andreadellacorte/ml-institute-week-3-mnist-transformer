@@ -27,7 +27,7 @@ sweep_config = {
         'encoder_emb_dim': {'values': [8, 16, 32, 64]},
         'learning_rate': {'values': [0.001, 0.003, 0.005]},
         'weight_decay': {'values': [0.0, 0.001, 0.01, 0.01, 0.1]},
-        'num_patches': {'values': [1, 4, 8, 16]},
+        'num_patches': {'values': [1, 4, 16, 196]},
         'num_heads': {'values': [1]},
         'num_layers': {'values': [1, 2, 3, 4]},
         'epochs': {'values': [5]},
