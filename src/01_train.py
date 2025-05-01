@@ -109,6 +109,19 @@ def train():
 
     sweep_train_dataset = train_data[config['dataset_type']][config['train_dataset_size']]
     sweep_test_dataset = test_data[config['dataset_type']][config['test_dataset_size']]
+
+    # Print the dataset sizes
+    print(f"Training dataset size: {len(sweep_train_dataset)}")
+    print(f"Testing dataset size: {len(sweep_test_dataset)}")
+    # Print the dataset types
+    print(f"Training dataset type: {config['dataset_type']}")
+    print(f"Testing dataset type: {config['dataset_type']}")
+    # Print the dataset data structure
+    print(f"Training dataset data structure: {type(sweep_train_dataset)}")
+    print(f"Testing dataset data structure: {type(sweep_test_dataset)}")
+    # Print the dataset first element
+    print(f"Training dataset first element: {sweep_train_dataset['image'][0]}")
+    print(f"Testing dataset first element: {sweep_test_dataset['image'][0]}")
     
     # Extract training data
     train_dataset = MNISTDataset(
