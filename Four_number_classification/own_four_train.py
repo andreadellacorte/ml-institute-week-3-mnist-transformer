@@ -81,8 +81,15 @@ class MyEncoder(nn.Module):
         self.wK = nn.Linear(emb_dim, emb_dim)
         self.wO = nn.Linear(emb_dim, emb_dim)
         
+        # Layer normalization
+        self.norm1 = nn.LayerNorm(emb_dim)
+        self.norm2 = nn.LayerNorm(emb_dim)
+        
     def forward(self, x):
         batch_size = x.size(0)
+        
+        # Store input for residual connection
+        residual = x
         
         # Project inputs to queries, keys, and values
         V = self.wV(x)
@@ -105,7 +112,11 @@ class MyEncoder(nn.Module):
         H = H.transpose(1, 2).contiguous().view(batch_size, -1, self.emb_dim)
         
         # Final projection
-        O = self.wO(H)
+        H = self.wO(H)
+        
+        # Add residual connection and apply layer norm
+        O = self.norm1(residual + H)
+        
         return O
 
 # Multi-digit Transformer model using custom encoder
