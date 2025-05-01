@@ -72,3 +72,9 @@ MNIST
 
 - [ ] [Scattered digits](https://github.com/guillaumeboniface/mnist_transformer/blob/3d1349b55d2590a7c319330cf97c432ba8c80b63/dataset.py#L53)
 - [ ] [Augmented Digits](https://github.com/YuriiOks/mlx-w3-mnist-transformer/blob/feat/phase3-sequence-gen/src/mnist_transformer/dataset.py)
+
+# Learnings
+
+Using encoder as unit test for transformer
+Aggregation
+Modular reuse

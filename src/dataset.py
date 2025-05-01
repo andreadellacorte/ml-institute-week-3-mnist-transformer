@@ -56,3 +56,4 @@ class MNISTDataset(torch.utils.data.Dataset):
         patches = np.array(patches)
 
         return torch.tensor(patches, dtype=torch.float32), torch.tensor(label, dtype=torch.long)
+

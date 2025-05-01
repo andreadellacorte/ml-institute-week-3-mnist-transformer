@@ -4,11 +4,11 @@ import torch.nn.functional as F
 import math
 
 class ClassifierEncoder(torch.nn.Module):
-    def __init__(self, num_classes, emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism):
+    def __init__(self, num_classes, emb_dim, patch_size, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism):
         super(ClassifierEncoder, self).__init__()
 
         self.model = torch.nn.Sequential(
-            Encoder(emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism),
+            Encoder(emb_dim, patch_size, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism),
             OutputLayer(emb_dim, num_classes, output_mechanism)
         )
 
@@ -16,11 +16,11 @@ class ClassifierEncoder(torch.nn.Module):
         return self.model(x)
 
 class Encoder(torch.nn.Module):
-    def __init__(self, emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism):
+    def __init__(self, emb_dim, patch_size, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism):
         super(Encoder, self).__init__()
 
         self.model = torch.nn.Sequential(
-            InputEmbedding(emb_dim, num_patches),
+            InputEmbedding(emb_dim, patch_size),
             PositionalEncoding(emb_dim, num_patches),
             *[MultiHeadAttention(num_heads, emb_dim, emb_dim, encoder_emb_dim, masking, self_attending) for _ in range(num_layers)],
             FeedForward(emb_dim),
@@ -34,6 +34,7 @@ class Transformer(torch.nn.Module):
             self,
             num_classes,
             emb_dim,
+            patch_size,
             num_patches,
             num_heads,
             num_layers,
@@ -44,7 +45,7 @@ class Transformer(torch.nn.Module):
         ):
         super(Transformer, self).__init__()
 
-        self.encoder = Encoder(num_classes, emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism)
+        self.encoder = Encoder(num_classes, emb_dim, patch_size, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism)
 
         decoder_emb_dim = num_classes*2
 
@@ -52,8 +53,8 @@ class Transformer(torch.nn.Module):
             torch.nn.ModuleDict({
                 "output_embedding": OutputEmbedding(decoder_emb_dim, num_classes),
                 "positional_encoding": PositionalEncoding(decoder_emb_dim, num_patches),
-                "multi_head_attention_1": MultiHeadAttention(num_heads, decoder_emb_dim, encoder_emb_dim, masking, self_attending),
-                "multi_head_attention_2": MultiHeadAttention(num_heads, decoder_emb_dim, encoder_emb_dim, masking, self_attending),
+                "multi_head_attention_1": MultiHeadAttention(num_heads, decoder_emb_dim, encoder_emb_dim, True, self_attending),
+                "multi_head_attention_2": MultiHeadAttention(num_heads, decoder_emb_dim, encoder_emb_dim, False, self_attending),
                 "feed_forward": FeedForward(emb_dim),
             }) for _ in range(num_layers)
         ])
@@ -109,14 +110,12 @@ class OutputEmbedding(torch.nn.Module):
         return self.linear(x)
 
 class InputEmbedding(torch.nn.Module):
-    def __init__(self, emb_dim, num_patches):
+    def __init__(self, emb_dim, patch_size):
         super(InputEmbedding, self).__init__()
-        
-        patch_size = int(math.sqrt(28*28/num_patches))
         
         self.fold = torch.nn.Unfold(kernel_size=patch_size, stride=patch_size)
 
-        self.linear = torch.nn.Linear(int(28*28/num_patches), emb_dim)
+        self.linear = torch.nn.Linear(patch_size*patch_size, emb_dim)
 
         # Initialize weights and biases
         init.kaiming_uniform_(self.linear.weight, nonlinearity='relu')

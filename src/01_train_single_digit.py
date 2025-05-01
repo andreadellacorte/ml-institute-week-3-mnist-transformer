@@ -7,6 +7,7 @@ from model import ClassifierEncoder
 from torch.utils.data import DataLoader
 import wandb
 import time
+import math
 
 # Define the sweep configuration
 sweep_config_full = {
@@ -93,14 +94,15 @@ print(f"Loaded {len(train_data)} training datasets and {len(test_data)} testing 
 # Initialize the sweep
 sweep_id = wandb.sweep(sweep_config, project="mlx7-week-3-mnist-transformer")
 
-# Set parameters
-NUM_CLASSES = 10
-RANDOM_SEED = 3407
-
 def train():
     # Initialize a new wandb run
     wandb.init()
     config = wandb.config
+
+    # Set stable parameters
+    NUM_CLASSES = 10
+    RANDOM_SEED = 3407    
+    PATCH_SIZE = int(math.sqrt(28 * 28 / config['num_patches']))
 
     # Set random seed for reproducibility
     torch.manual_seed(RANDOM_SEED)
@@ -135,6 +137,7 @@ def train():
     classifier = ClassifierEncoder(
         NUM_CLASSES,
         config['emb_dim'],
+        PATCH_SIZE,
         config['num_patches'],
         config['num_heads'],
         config['num_layers'],
