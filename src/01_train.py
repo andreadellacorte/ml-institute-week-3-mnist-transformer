@@ -3,7 +3,7 @@ import random
 import pickle
 import numpy as np
 from dataset import MNISTDataset
-from model import TransformerModel
+from model import Encoder
 from torch.utils.data import DataLoader
 import wandb
 import time
@@ -43,7 +43,7 @@ sweep_config_single = {
         'goal': 'maximize'
     },
     'parameters': {
-        'dataset_type': {'values': ['torchvision', 'huggingface']},
+        'dataset_type': {'values': ['huggingface']},
         'train_dataset_size': {'values': ['5000']},
         'test_dataset_size': {'values': ['full']},
         'normalize_dataset': {'values': [True]},
@@ -94,8 +94,8 @@ print(f"Loaded {len(train_data)} training datasets and {len(test_data)} testing 
 sweep_id = wandb.sweep(sweep_config, project="mlx7-week-3-mnist-transformer")
 
 # Set parameters
-num_classes = 10
-random_seed = 3407
+NUM_CLASSES = 10
+RANDOM_SEED = 3407
 
 def train():
     # Initialize a new wandb run
@@ -103,9 +103,13 @@ def train():
     config = wandb.config
 
     # Set random seed for reproducibility
-    torch.manual_seed(random_seed)
-    np.random.seed(random_seed)
-    random.seed(random_seed)
+    torch.manual_seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+    random.seed(RANDOM_SEED)
+    torch.cuda.manual_seed(RANDOM_SEED)
+    torch.cuda.manual_seed_all(RANDOM_SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
     sweep_train_dataset = train_data[config['dataset_type']][config['train_dataset_size']]
     sweep_test_dataset = test_data[config['dataset_type']][config['test_dataset_size']]
@@ -128,8 +132,8 @@ def train():
 
     # Initialize the model
 
-    transformerModel = TransformerModel(
-        num_classes,
+    encoder = Encoder(
+        NUM_CLASSES,
         config['emb_dim'],
         config['num_patches'],
         config['num_heads'],
@@ -142,24 +146,24 @@ def train():
 
     # Check for GPU availability
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    transformerModel = transformerModel.to(device)
+    encoder = encoder.to(device)
 
     # Log metrics to wandb
-    wandb.watch(transformerModel, log="all", log_graph=True)
+    wandb.watch(encoder, log="all", log_graph=True)
 
     # DataLoaders
     train_loader = DataLoader(train_dataset, config['batch_size'], shuffle=True)
     test_loader = DataLoader(test_dataset, config['batch_size'], shuffle=False)
 
     optimizer = torch.optim.Adam(
-        list(transformerModel.parameters()),
+        list(encoder.parameters()),
         lr=config['learning_rate'],
         weight_decay=config['weight_decay'])
     
-    print(f"Num of trainable parameters: {sum(p.numel() for p in transformerModel.parameters() if p.requires_grad)}")
+    print(f"Num of trainable parameters: {sum(p.numel() for p in encoder.parameters() if p.requires_grad)}")
 
     # Log the number of trainable parameters to wandb
-    num_trainable_params = sum(p.numel() for p in transformerModel.parameters() if p.requires_grad)
+    num_trainable_params = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
     wandb.log({"num_trainable_params": num_trainable_params})
 
     loss_fn = torch.nn.CrossEntropyLoss()
@@ -169,11 +173,11 @@ def train():
 
     # Training and evaluation loop
     for epoch in range(config['epochs']):
-        transformerModel.train()
+        encoder.train()
         total_loss = 0
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
-            logits = transformerModel(images)
+            logits = encoder(images)
 
             loss = loss_fn(logits, labels)
 
@@ -189,14 +193,14 @@ def train():
         wandb.log({"epoch": epoch + 1, "train_loss": avg_train_loss})
 
         # Perform evaluation over the entire test set for correctness
-        transformerModel.eval()
+        encoder.eval()
         correct = 0
         total = 0
         total_loss = 0
         with torch.no_grad():
             for images, labels in test_loader:
                 images, labels = images.to(device), labels.to(device)
-                logits = transformerModel(images)
+                logits = encoder(images)
 
                 loss = loss_fn(logits, labels)
                 total_loss += loss.item() * labels.size(0)  # Accumulate loss weighted by batch size
