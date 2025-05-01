@@ -16,7 +16,7 @@ sweep_config_full = {
         'goal': 'maximize'
     },
     'parameters': {
-        'dataset_type': {'values': ['huggingface']},
+        'dataset_type': {'values': ['torchvision']},
         'train_dataset_size': {'values': ['5000']},
         'test_dataset_size': {'values': ['full']},
         'rescale_dataset': {'values': [True, False]},
@@ -43,19 +43,19 @@ sweep_config_single = {
         'goal': 'maximize'
     },
     'parameters': {
-        'dataset_type': {'values': ['huggingface']},
+        'dataset_type': {'values': ['torchvision', 'huggingface']},
         'train_dataset_size': {'values': ['5000']},
         'test_dataset_size': {'values': ['full']},
         'normalize_dataset': {'values': [True]},
         'rescale_dataset': {'values': [True]},
-        'batch_size': {'values': [1]},
+        'batch_size': {'values': [512]},
         'emb_dim': {'values': [16]},
         'encoder_emb_dim': {'values': [16]},
         'learning_rate': {'values': [0.001]},
         'weight_decay': {'values': [0.01]},
         'num_patches': {'values': [4]},
         'output_mechanism' : {'values': ['mean']},
-        'num_heads': {'values': [8]},
+        'num_heads': {'values': [1]},
         'num_layers': {'values': [1]},
         'epochs': {'values': [5]},
         'masking': {'values': [False]},
@@ -110,19 +110,6 @@ def train():
     sweep_train_dataset = train_data[config['dataset_type']][config['train_dataset_size']]
     sweep_test_dataset = test_data[config['dataset_type']][config['test_dataset_size']]
 
-    # Print the dataset sizes
-    print(f"Training dataset size: {len(sweep_train_dataset)}")
-    print(f"Testing dataset size: {len(sweep_test_dataset)}")
-    # Print the dataset types
-    print(f"Training dataset type: {config['dataset_type']}")
-    print(f"Testing dataset type: {config['dataset_type']}")
-    # Print the dataset data structure
-    print(f"Training dataset data structure: {type(sweep_train_dataset)}")
-    print(f"Testing dataset data structure: {type(sweep_test_dataset)}")
-    # Print the dataset first element
-    print(f"Training dataset first element: {sweep_train_dataset['image'][0]}")
-    print(f"Testing dataset first element: {sweep_test_dataset['image'][0]}")
-    
     # Extract training data
     train_dataset = MNISTDataset(
         sweep_train_dataset['image'],

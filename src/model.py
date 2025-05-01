@@ -32,7 +32,12 @@ class ProjectionLayer(torch.nn.Module):
         init.zeros_(self.linear.bias)
 
     def forward(self, x):
-        x = self.fold(x.unsqueeze(1)).transpose(1, 2)
+
+        # Hack to make both torchivision and huggingface datasets work
+        if x.dim() == 3:
+            x = x.unsqueeze(1)
+
+        x = self.fold(x).transpose(1, 2)
 
         return self.linear(x)
 
