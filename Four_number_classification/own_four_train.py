@@ -73,51 +73,79 @@ class MyEncoder(nn.Module):
         self.emb_dim = emb_dim
         self.num_heads = num_heads
         self.head_dim = emb_dim // num_heads
+        self.num_layers = num_layers
         assert self.head_dim * num_heads == emb_dim, "emb_dim must be divisible by num_heads"
         
-        # Linear projections for queries, keys, and values for all heads
-        self.wV = nn.Linear(emb_dim, emb_dim)
-        self.wQ = nn.Linear(emb_dim, emb_dim)
-        self.wK = nn.Linear(emb_dim, emb_dim)
-        self.wO = nn.Linear(emb_dim, emb_dim)
-        
-        # Layer normalization
-        self.norm1 = nn.LayerNorm(emb_dim)
-        self.norm2 = nn.LayerNorm(emb_dim)
+        # Create N encoder layers
+        self.layers = nn.ModuleList([
+            nn.ModuleDict({
+                # Multi-head attention
+                'attention': nn.ModuleDict({
+                    'wV': nn.Linear(emb_dim, emb_dim),
+                    'wQ': nn.Linear(emb_dim, emb_dim),
+                    'wK': nn.Linear(emb_dim, emb_dim),
+                    'wO': nn.Linear(emb_dim, emb_dim)
+                }),
+                # Layer normalization
+                'norm1': nn.LayerNorm(emb_dim),
+                'norm2': nn.LayerNorm(emb_dim),
+                # Feed-forward network
+                'ffn': nn.Sequential(
+                    nn.Linear(emb_dim, emb_dim * 4),  # Expansion
+                    nn.GELU(),                        # Non-linear activation
+                    nn.Linear(emb_dim * 4, emb_dim)   # Contraction
+                )
+            }) for _ in range(num_layers)
+        ])
         
     def forward(self, x):
         batch_size = x.size(0)
         
-        # Store input for residual connection
-        residual = x
+        # Process through multiple transformer layers
+        for layer in self.layers:
+            # Store input for residual connection this helps with training deep neural networks, learning small corrections and avoid the vanishing gradient problem
+            #output of a sub-layer (like a multi-head attention or feed-forward network) is added to the original input, allowing gradients to flow through the residual connection
+            residual = x
+            
+            # Multi-head attention
+            V = layer['attention']['wV'](x)
+            Q = layer['attention']['wQ'](x)
+            K = layer['attention']['wK'](x)
+            
+            # Reshape for multi-head attention
+            V = V.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+            Q = Q.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+            K = K.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+            
+            # Compute attention scores
+            scores = (Q @ K.transpose(-2, -1)) / np.sqrt(self.head_dim)
+            A = torch.softmax(scores, dim=-1)
+            
+            # Apply attention to values
+            H = A @ V
+            
+            # Reshape back to original dimensions
+            H = H.transpose(1, 2).contiguous().view(batch_size, -1, self.emb_dim)
+            
+            # Final projection (output of attention head)
+            O = layer['attention']['wO'](H)
+            
+            # Add residual connection and apply layer norm
+            x = layer['norm1'](residual + O)
+            
+            # Feed-forward network with residual connection
+            residual = x
+            x = layer['ffn'](x)
+            x = layer['norm2'](residual + x)
         
-        # Project inputs to queries, keys, and values
-        V = self.wV(x)
-        Q = self.wQ(x)
-        K = self.wK(x)
-        
-        # Reshape for multi-head attention
-        V = V.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
-        Q = Q.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
-        K = K.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
-        
-        # Compute attention scores
-        scores = (Q @ K.transpose(-2, -1)) / np.sqrt(self.head_dim)
-        A = torch.softmax(scores, dim=-1)
-        
-        # Apply attention to values
-        H = A @ V
-        
-        # Reshape back to original dimensions
-        H = H.transpose(1, 2).contiguous().view(batch_size, -1, self.emb_dim)
-        
-        # Final projection
-        H = self.wO(H)
-        
-        # Add residual connection and apply layer norm
-        O = self.norm1(residual + H)
-        
-        return O
+        return x
+
+def create_mask(size):
+    # Create upper triangular matrix of ones
+    mask = torch.triu(torch.ones(size, size), diagonal=1)
+    # Convert to -inf where mask is 1 (positions to mask out)
+    mask = mask.masked_fill(mask == 1, float('-inf'))
+    return mask
 
 # Multi-digit Transformer model using custom encoder
 class MultiDigitTransformer(nn.Module):
@@ -128,27 +156,27 @@ class MultiDigitTransformer(nn.Module):
         self.emb_dim = emb_dim
         self.num_patches = (img_size // patch_size) ** 2
 
-        # Linear projection of flattened patches
+        # Input embedding
         self.patch_embed = nn.Linear(patch_size * patch_size, emb_dim)
 
-        # Positional embedding
+        # Positional encoding
         self.pos_embed = nn.Parameter(torch.randn(1, self.num_patches, emb_dim))
 
-        # Use custom encoder
-        self.transformer = MyEncoder(emb_dim=emb_dim, num_heads=num_heads, num_layers=num_layers)
+        # Encoder
+        self.encoder = MyEncoder(emb_dim=emb_dim, num_heads=num_heads, num_layers=num_layers)
         
-        # Classification heads (one for each digit position)
-        self.cls_heads = nn.ModuleList([
-            nn.Sequential(
-                nn.LayerNorm(emb_dim),
-                nn.Linear(emb_dim, emb_dim),
-                nn.GELU(),
-                nn.Linear(emb_dim, 10)
-            ) for _ in range(num_digits)
-        ])
+        # Decoder
+        self.decoder = MyDecoder(emb_dim=emb_dim, num_heads=num_heads, num_layers=num_layers)
+        
+        # Final layers
+        self.final_layer = nn.Sequential(
+            nn.LayerNorm(emb_dim),
+            nn.Linear(emb_dim, emb_dim),
+            nn.GELU(),
+            nn.Linear(emb_dim, 10)  # 10 classes for MNIST
+        )
         
     def forward(self, x):
-        # x shape: (B, 1, 56, 56)
         batch_size = x.size(0)
         
         # Split into patches
@@ -156,21 +184,146 @@ class MultiDigitTransformer(nn.Module):
         x = x.contiguous().view(batch_size, 1, -1, self.patch_size * self.patch_size)
         x = x.squeeze(1)  # shape: (batch_size, num_patches, patch_size*patch_size)
 
-        # Patch embedding + positional embedding
+        # Input embedding + positional encoding
         x = self.patch_embed(x) + self.pos_embed  # shape: (batch_size, num_patches, emb_dim)
 
-        # Transformer encoding
-        x = self.transformer(x)  # shape: (batch_size, num_patches, emb_dim)
-
+        # Encoder processing
+        encoder_output = self.encoder(x)
+        
+        # Create mask for decoder
+        mask = create_mask(x.size(1))
+        mask = mask.to(x.device)
+        
+        # Decoder processing
+        decoder_output = self.decoder(x, encoder_output, mask)
+        
         # Get predictions for each digit position
         outputs = []
-        for head in self.cls_heads:
+        for i in range(self.num_digits):
             # Use the first token for classification
-            cls_token = x[:, 0, :]  # (B, emb_dim)
-            output = head(cls_token)  # (B, 10)
+            cls_token = decoder_output[:, 0, :]  # (B, emb_dim)
+            output = self.final_layer(cls_token)  # (B, 10)
             outputs.append(output)
             
         return torch.stack(outputs, dim=1)  # (B, num_digits, 10)
+
+class MyDecoder(nn.Module):
+    def __init__(self, emb_dim=128, num_heads=8, num_layers=4):
+        super().__init__()
+        self.emb_dim = emb_dim
+        self.num_heads = num_heads
+        self.head_dim = emb_dim // num_heads
+        self.num_layers = num_layers
+        assert self.head_dim * num_heads == emb_dim, "emb_dim must be divisible by num_heads"
+        
+        # Create N decoder layers
+        self.layers = nn.ModuleList([
+            nn.ModuleDict({
+                # Masked Multi-head attention
+                'masked_attention': nn.ModuleDict({
+                    'wV': nn.Linear(emb_dim, emb_dim),
+                    'wQ': nn.Linear(emb_dim, emb_dim),
+                    'wK': nn.Linear(emb_dim, emb_dim),
+                    'wO': nn.Linear(emb_dim, emb_dim)
+                }),
+                # Encoder-Decoder attention
+                'enc_dec_attention': nn.ModuleDict({
+                    'wV': nn.Linear(emb_dim, emb_dim),
+                    'wQ': nn.Linear(emb_dim, emb_dim),
+                    'wK': nn.Linear(emb_dim, emb_dim),
+                    'wO': nn.Linear(emb_dim, emb_dim)
+                }),
+                # Layer normalizations
+                'norm1': nn.LayerNorm(emb_dim),
+                'norm2': nn.LayerNorm(emb_dim),
+                'norm3': nn.LayerNorm(emb_dim),
+                # Feed-forward network
+                'ffn': nn.Sequential(
+                    nn.Linear(emb_dim, emb_dim * 4),  # Expansion
+                    nn.GELU(),                        # Non-linear activation
+                    nn.Linear(emb_dim * 4, emb_dim)   # Contraction
+                )
+            }) for _ in range(num_layers)
+        ])
+        
+    def forward(self, x, encoder_output, mask=None):
+        batch_size = x.size(0)
+        
+        # Process through multiple decoder layers
+        for layer in self.layers:
+            # Step 1: Masked Multi-head Attention
+            residual = x
+            
+            # Project to queries, keys, and values
+            V = layer['masked_attention']['wV'](x)
+            Q = layer['masked_attention']['wQ'](x)
+            K = layer['masked_attention']['wK'](x)
+            
+            # Reshape for multi-head attention
+            V = V.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+            Q = Q.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+            K = K.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+            
+            # Compute attention scores
+            scores = (Q @ K.transpose(-2, -1)) / np.sqrt(self.head_dim)
+            
+            # Apply mask if provided
+            if mask is not None:
+                scores = scores + mask
+            else:
+                print ("mask is none")
+            
+            A = torch.softmax(scores, dim=-1)
+            
+            # Apply attention to values
+            H = A @ V
+            
+            # Reshape back to original dimensions
+            H = H.transpose(1, 2).contiguous().view(batch_size, -1, self.emb_dim)
+            
+            # Final projection
+            O = layer['masked_attention']['wO'](H)
+            
+            # Add residual connection and apply layer norm
+            x = layer['norm1'](residual + O)
+            
+            # Step 2: Encoder-Decoder Attention
+            residual = x
+            
+            # Project encoder output to keys and values
+            V_enc = layer['enc_dec_attention']['wV'](encoder_output)
+            K_enc = layer['enc_dec_attention']['wK'](encoder_output)
+            
+            # Project decoder output to queries
+            Q_dec = layer['enc_dec_attention']['wQ'](x)
+            
+            # Reshape for multi-head attention
+            V_enc = V_enc.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+            K_enc = K_enc.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+            Q_dec = Q_dec.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+            
+            # Compute attention scores
+            scores = (Q_dec @ K_enc.transpose(-2, -1)) / np.sqrt(self.head_dim)
+            A = torch.softmax(scores, dim=-1)
+            
+            # Apply attention to values
+            H = A @ V_enc
+            
+            # Reshape back to original dimensions
+            H = H.transpose(1, 2).contiguous().view(batch_size, -1, self.emb_dim)
+            
+            # Final projection
+            O = layer['enc_dec_attention']['wO'](H)
+            
+            # Add residual connection and apply layer norm
+            x = layer['norm2'](residual + O)
+            
+            # Step 3: Feed Forward Network
+            residual = x
+            x = layer['ffn'](x)
+            x = layer['norm3'](residual + x)
+        
+        return x
 
 # Initialize wandb
 wandb.init(project="multi-digit-mnist-custom", entity=None)
