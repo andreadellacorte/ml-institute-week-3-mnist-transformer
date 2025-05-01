@@ -11,6 +11,7 @@ import wandb
 from PIL import Image
 import random
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 # Configuration
 config = {
@@ -23,7 +24,7 @@ config = {
     "num_heads": 8,
     "num_layers": 4,
     "num_digits": 4,
-    "train_frac": 0.2
+    "train_frac": 0.9
 }
 
 # Custom dataset for multiple MNIST digits
@@ -32,6 +33,7 @@ class MultiMNISTDataset(Dataset):
         self.mnist_dataset = mnist_dataset
         self.num_digits = num_digits
         self.transform = transform
+        self.finish_token = 11  # Index for finish token
         
     def __len__(self):
         return len(self.mnist_dataset) // self.num_digits
@@ -63,6 +65,9 @@ class MultiMNISTDataset(Dataset):
         
         if self.transform:
             canvas = self.transform(canvas)
+        
+        # Append finish token to digits
+        digits.append(self.finish_token)
             
         return canvas, torch.tensor(digits)
 
@@ -143,7 +148,7 @@ class MyEncoder(nn.Module):
 def create_mask(size):
     # Create upper triangular matrix of ones
     mask = torch.triu(torch.ones(size, size), diagonal=1)
-    # Convert to -inf where mask is 1 (positions to mask out)
+    # Convert to -inf where mask is 1 (positions to mask out) we do this to avoid the model from seeing the future tokens its no 0 becasue
     mask = mask.masked_fill(mask == 1, float('-inf'))
     return mask
 
@@ -155,7 +160,7 @@ class MultiDigitTransformer(nn.Module):
         self.patch_size = patch_size
         self.emb_dim = emb_dim
         self.num_patches = (img_size // patch_size) ** 2
-        self.num_classes = 11  # For digits 0-10
+        self.num_classes = 12  # 0-9 digits + start + finish
         self.token_dim = 16    # Dimension for digit token embeddings
 
         # Input embedding for encoder
@@ -163,7 +168,7 @@ class MultiDigitTransformer(nn.Module):
         self.pos_embed_enc = nn.Parameter(torch.randn(1, self.num_patches, emb_dim))
         
         # Embeddings for each possible digit (0-10) with token_dim
-        # Shape: (11, 16) - each digit gets a 16-dimensional embedding
+        # Shape: (12, 16) - each digit gets a 16-dimensional embedding
         self.digit_embeddings = nn.Parameter(torch.randn(self.num_classes, self.token_dim))
         
         # Linear projection from token_dim to emb_dim
@@ -184,7 +189,7 @@ class MultiDigitTransformer(nn.Module):
             nn.Linear(emb_dim, self.num_classes)
         )
         
-    def forward(self, x):
+    def forward(self, x, targets=None):
         batch_size = x.size(0)
         
         # Encoder processing
@@ -199,36 +204,34 @@ class MultiDigitTransformer(nn.Module):
         # Encoder processing
         encoder_output = self.encoder(x)
         
+        # Prepare decoder input sequence
+        # Index 10: start token, Index 11: finish token
+        start_token_idx = 10
+        
+        if targets is not None:
+            # Teacher forcing: prepend start token to target sequence except last token
+            # targets shape is (B, num_digits + 1) because of finish token
+            decoder_input_indices = torch.cat([
+                torch.full((batch_size, 1), start_token_idx, dtype=targets.dtype, device=targets.device),
+                targets[:, :-1]  # exclude finish token for input
+            ], dim=1)
+        else:
+            # Inference: just use start token as first input
+            decoder_input_indices = torch.full((batch_size, 1), start_token_idx, dtype=torch.long, device=x.device)
+
+        # Get embeddings for decoder input
+        decoder_input = self.digit_embeddings[decoder_input_indices]
+        decoder_input = self.token_projection(decoder_input)
+
+        # Create mask for decoder (now needs to be size of input sequence)
+        mask = create_mask(decoder_input.size(1)).to(x.device)
+
         # Decoder processing
-        # Start with digit embeddings (num_digits, token_dim)
-        decoder_input = self.digit_embeddings[:self.num_digits]  # (num_digits, token_dim)
-        
-        # Project token embeddings to emb_dim
-        decoder_input = self.token_projection(decoder_input)  # (num_digits, emb_dim)
-        
-        # Create mask for decoder
-        mask = create_mask(self.num_digits)
-        mask = mask.to(x.device)
-        
-        # Process each batch element
-        outputs = []
-        for b in range(batch_size):
-            # Get encoder output for this batch element
-            enc_out = encoder_output[b:b+1]  # (1, num_patches, emb_dim)
-            
-            # Process through decoder
-            dec_out = self.decoder(decoder_input.unsqueeze(0), enc_out, mask)  # (1, num_digits, emb_dim)
-            
-            # Get predictions for each digit position
-            pos_outputs = []
-            for i in range(self.num_digits):
-                tokens = dec_out[0, i]  # (emb_dim,)
-                output = self.final_layer(tokens)  # (num_classes,)
-                pos_outputs.append(output)
-            
-            outputs.append(torch.stack(pos_outputs))  # (num_digits, num_classes)
-            
-        return torch.stack(outputs)  # (batch_size, num_digits, num_classes)
+        decoder_output = self.decoder(decoder_input, encoder_output, mask)
+
+        # Final prediction
+        outputs = self.final_layer(decoder_output)
+        return outputs  # (B, seq_len, num_classes) where seq_len = num_digits + 1
 
 class MyDecoder(nn.Module):
     def __init__(self, emb_dim=128, num_heads=8, num_layers=4):
@@ -396,17 +399,20 @@ def train(model, train_loader, criterion, optimizer, device, epoch):
     total_loss = 0
     total_correct = 0
     total_samples = 0
-    
-    for batch_idx, (data, targets) in enumerate(train_loader):
+
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f"Epoch {epoch+1} [Train]")
+    for batch_idx, (data, targets) in progress_bar:
         data, targets = data.to(device), targets.to(device)
         
         optimizer.zero_grad()
-        outputs = model(data)  # (B, num_digits, num_classes)
+        outputs = model(data, targets)  # (B, num_digits + 1, num_classes)
         
         # Reshape for loss calculation
         batch_size = outputs.size(0)
-        outputs = outputs.reshape(batch_size * config["num_digits"], -1)  # (B * num_digits, num_classes)
-        targets = targets.reshape(-1)  # (B * num_digits)
+        seq_len = outputs.size(1)  # num_digits + 1 (including finish token)
+        outputs = outputs.reshape(batch_size * seq_len, -1)  # (B * (num_digits + 1), num_classes)
+        targets = targets.reshape(-1)  # (B * (num_digits + 1))
+        
         
         loss = criterion(outputs, targets)
         loss.backward()
@@ -417,14 +423,7 @@ def train(model, train_loader, criterion, optimizer, device, epoch):
         total_correct += predicted.eq(targets).sum().item()
         total_samples += targets.size(0)
         
-        if batch_idx % 100 == 0:
-            print(f'Train Epoch: {epoch} [{batch_idx}/{len(train_loader)}]\tLoss: {loss.item():.6f}')
-            wandb.log({
-                "train_batch_loss": loss.item(),
-                "train_batch_accuracy": 100. * total_correct / total_samples,
-                "epoch": epoch,
-                "batch": batch_idx
-            })
+        progress_bar.set_postfix(loss=loss.item())
     
     return total_loss / len(train_loader), 100. * total_correct / total_samples
 
@@ -434,23 +433,26 @@ def validate(model, val_loader, criterion, device, epoch):
     total_loss = 0
     total_correct = 0
     total_samples = 0
-    
+
+    progress_bar = tqdm(val_loader, total=len(val_loader), desc=f"Epoch {epoch+1} [Val]")
     with torch.no_grad():
-        for data, targets in val_loader:
+        for data, targets in progress_bar:
             data, targets = data.to(device), targets.to(device)
-            outputs = model(data)  # (B, num_digits, num_classes)
+            outputs = model(data, targets)  # (B, seq_len, num_classes)
             
             # Reshape for loss calculation
             batch_size = outputs.size(0)
-            outputs = outputs.reshape(batch_size * config["num_digits"], -1)  # (B * num_digits, num_classes)
-            targets = targets.reshape(-1)  # (B * num_digits)
-            
+            seq_len = outputs.size(1)  # num_digits + 1 (including finish token)
+            outputs = outputs.reshape(batch_size * seq_len, -1)  # (B * (num_digits + 1), num_classes)
+            targets = targets.reshape(-1)  # (B * (num_digits + 1))
+                 
             loss = criterion(outputs, targets)
             total_loss += loss.item()
             
             _, predicted = outputs.max(1)
             total_correct += predicted.eq(targets).sum().item()
             total_samples += targets.size(0)
+            progress_bar.set_postfix(loss=loss.item())
     
     return total_loss / len(val_loader), 100. * total_correct / total_samples
 
