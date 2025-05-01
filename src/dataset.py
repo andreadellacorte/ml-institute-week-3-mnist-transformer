@@ -5,15 +5,18 @@ from typing import Tuple
 
 # Define a custom Dataset class
 class MNISTDataset(torch.utils.data.Dataset):
-    def __init__(self, images, labels, normalize_dataset, num_patches):
+    def __init__(self, images, labels, normalize, rescale, num_patches=1):
         self.num_patches = num_patches
         self.images = np.array(images)
         self.labels = labels
 
-        if normalize_dataset:
+        if rescale:
+            self.images = self.images / 255.0
+
+        if normalize:
             self.mean = np.mean(self.images)
             self.std = np.std(self.images)
-            self.images = (self.images - self.mean) / self.std  # Normalize images
+            self.images = (self.images - self.mean) / self.std
 
     def __len__(self) -> int:
         return len(self.labels)
@@ -21,6 +24,13 @@ class MNISTDataset(torch.utils.data.Dataset):
     def __getitem__(self,
                     idx: int
         ) -> Tuple[torch.Tensor, torch.Tensor]:
+
+        image = self.images[idx]
+        label = self.labels[idx]
+
+        if self.num_patches == 1:
+            return torch.tensor(image, dtype=torch.float32), torch.tensor(label, dtype=torch.long)
+        
         chunks_per_size = math.sqrt(self.num_patches)
 
         # throw error if num_patches is not a perfect square
@@ -34,9 +44,6 @@ class MNISTDataset(torch.utils.data.Dataset):
         chunks_per_size = int(chunks_per_size)
         pixels_per_chunk = self.images.shape[1] // int(chunks_per_size)
 
-        image = self.images[idx]
-        label = self.labels[idx]
-
         patches = []
         for j in range(self.num_patches):
             row_start = (j // chunks_per_size) * pixels_per_chunk
@@ -47,4 +54,5 @@ class MNISTDataset(torch.utils.data.Dataset):
 
         # Convert patches list to a single numpy array before creating a tensor
         patches = np.array(patches)
+
         return torch.tensor(patches, dtype=torch.float32), torch.tensor(label, dtype=torch.long)

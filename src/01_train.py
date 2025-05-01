@@ -19,14 +19,15 @@ sweep_config_full = {
         'dataset_type': {'values': ['huggingface']},
         'train_dataset_size': {'values': ['5000']},
         'test_dataset_size': {'values': ['full']},
+        'rescale_dataset': {'values': [True, False]},
         'normalize_dataset': {'values': [True, False]},
         'batch_size': {'values': [512]},
-        'emb_dim': {'values': [16, 32, 64, 128]},
-        'encoder_emb_dim': {'values': [16, 32, 64, 128]},
-        'learning_rate': {'values': [0.001, 0.002, 0.003, 0.005, 0.01]},
-        'weight_decay': {'values': [0.0, 0.001, 0.01, 0.01, 0.1]},
+        'emb_dim': {'values': [16]},
+        'encoder_emb_dim': {'values': [16]},
+        'learning_rate': {'values': [0.001, 0.002]},
+        'weight_decay': {'values': [0.001]},
         'output_mechanism': {'values': ['mean', 'first']},
-        'num_patches': {'values': [4, 16, 196]},
+        'num_patches': {'values': [16]},
         'num_heads': {'values': [1, 2, 4, 8, 16]},
         'num_layers': {'values': [1, 2, 4, 8, 16]},
         'epochs': {'values': [10]},
@@ -42,15 +43,16 @@ sweep_config_single = {
         'goal': 'maximize'
     },
     'parameters': {
-        'dataset_type': {'values': ['huggingface', 'torchvision']},
+        'dataset_type': {'values': ['huggingface']},
         'train_dataset_size': {'values': ['5000']},
         'test_dataset_size': {'values': ['full']},
         'normalize_dataset': {'values': [True]},
-        'batch_size': {'values': [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]},
-        'emb_dim': {'values': [64]},
-        'encoder_emb_dim': {'values': [32]},
+        'rescale_dataset': {'values': [True]},
+        'batch_size': {'values': [1]},
+        'emb_dim': {'values': [16]},
+        'encoder_emb_dim': {'values': [16]},
         'learning_rate': {'values': [0.001]},
-        'weight_decay': {'values': [0.0]},
+        'weight_decay': {'values': [0.01]},
         'num_patches': {'values': [4]},
         'output_mechanism' : {'values': ['mean']},
         'num_heads': {'values': [8]},
@@ -61,10 +63,9 @@ sweep_config_single = {
     }
 }
 
-sweep_config = sweep_config_full
+sweep_config = sweep_config_single
 
 print("Loading datasets...")
-
 
 # Extract all required training and testing data based on sweep_config
 required_dataset_types = set(sweep_config['parameters']['dataset_type']['values'])
@@ -73,14 +74,14 @@ required_test_sizes = set(sweep_config['parameters']['test_dataset_size']['value
 
 train_data = {
     dataset_type: {
-        size: pickle.load(open(f"data/raw/{dataset_type}_{size}_train_data.pkl", "rb"))
+        size: pickle.load(open(f"data/raw/{dataset_type}/{size}_train_data.pkl", "rb"))
         for size in required_train_sizes
     }
     for dataset_type in required_dataset_types
 }
 test_data = {
     dataset_type: {
-        size: pickle.load(open(f"data/raw/{dataset_type}_{size}_test_data.pkl", "rb"))
+        size: pickle.load(open(f"data/raw/{dataset_type}/{size}_test_data.pkl", "rb"))
         for size in required_test_sizes
     }
     for dataset_type in required_dataset_types
@@ -110,8 +111,20 @@ def train():
     sweep_test_dataset = test_data[config['dataset_type']][config['test_dataset_size']]
     
     # Extract training data
-    train_dataset = MNISTDataset(sweep_train_dataset['image'], sweep_train_dataset['label'], config['normalize_dataset'], config['num_patches'])
-    test_dataset = MNISTDataset(sweep_test_dataset['image'], sweep_test_dataset['label'], config['normalize_dataset'], config['num_patches'])
+    train_dataset = MNISTDataset(
+        sweep_train_dataset['image'],
+        sweep_train_dataset['label'],
+        config['normalize_dataset'],
+        config['rescale_dataset']
+        #config['num_patches']
+    )
+    test_dataset = MNISTDataset(
+        sweep_test_dataset['image'],
+        sweep_test_dataset['label'],
+        config['normalize_dataset'],
+        config['rescale_dataset']
+        #config['num_patches']
+    )
 
     # Initialize the model
 

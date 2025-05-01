@@ -40,8 +40,9 @@ Prior study
 - [x] Encoder simplified architecture
 - [x] Evaluate performance single digit
 - [ ] Encoder complete architecture
-  - [X] Masking
-  - [X] Multi-head
+  - [x] Rescale
+  - [x] Masking
+  - [x] Multi-head
   - [ ] Residuals / Norm / MLP
 - [ ] Evaluate performance single digit
 - [ ] Multi-digit dataset prep ([https://github.com/YuriiOks/mlx-w3-mnist-transformer/blob/feat/phase3-sequence-gen/src/mnist_transformer/dataset.py](example))
@@ -57,9 +58,9 @@ Prior study
 ## Experiments
 
 - [ ] Compare results of hugging face vs pytorch dataset MNIST
-  - [X] Integrate multi-data download
+  - [x] Integrate multi-data download
 - [x] Use sequential module to refactor independent models into one
-- [ ] Replace my unfold function with nn.unfold (thanks again @DanielBryars for showing me)
+- [x] Replace my unfold function with nn.unfold (thanks again @DanielBryars for showing me)
 
 ## Tooling
 

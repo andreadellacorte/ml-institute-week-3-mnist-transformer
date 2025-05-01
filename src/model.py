@@ -1,7 +1,6 @@
 import torch
 import torch.nn.init as init
 import torch.nn.functional as F
-import numpy as np
 import math
 
 class TransformerModel(torch.nn.Module):
@@ -21,6 +20,11 @@ class TransformerModel(torch.nn.Module):
 class ProjectionLayer(torch.nn.Module):
     def __init__(self, emb_dim, num_patches):
         super(ProjectionLayer, self).__init__()
+        
+        patch_size = int(math.sqrt(28*28/num_patches))
+        
+        self.fold = torch.nn.Unfold(kernel_size=patch_size, stride=patch_size)
+
         self.linear = torch.nn.Linear(int(28*28/num_patches), emb_dim)
 
         # Initialize weights and biases
@@ -28,6 +32,8 @@ class ProjectionLayer(torch.nn.Module):
         init.zeros_(self.linear.bias)
 
     def forward(self, x):
+        x = self.fold(x.unsqueeze(1)).transpose(1, 2)
+
         return self.linear(x)
 
 class PositionalLayer(torch.nn.Module):
@@ -94,10 +100,7 @@ class MyEncoderLayer(torch.nn.Module):
         v = self.wV(x).view(batch_size, seq_len, self.num_heads, self.encoder_emb_dim).transpose(1, 2)
 
         # Calculate attention scores from Q * K^T
-        scores = q @ k.transpose(-2, -1) / (math.sqrt(self.encoder_emb_dim) + 1e-9)
-
-        # Clamp attention scores to a reasonable range to prevent extreme values
-        scores = torch.clamp(scores, min=-1e9, max=1e9)
+        scores = q @ k.transpose(-2, -1) / (math.sqrt(self.encoder_emb_dim))
 
         if self.masking:
             if self.self_attending:
