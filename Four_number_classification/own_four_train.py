@@ -155,12 +155,20 @@ class MultiDigitTransformer(nn.Module):
         self.patch_size = patch_size
         self.emb_dim = emb_dim
         self.num_patches = (img_size // patch_size) ** 2
+        self.num_classes = 11  # For digits 0-10
+        self.token_dim = 16    # Dimension for digit token embeddings
 
-        # Input embedding
+        # Input embedding for encoder
         self.patch_embed = nn.Linear(patch_size * patch_size, emb_dim)
-
-        # Positional encoding
-        self.pos_embed = nn.Parameter(torch.randn(1, self.num_patches, emb_dim))
+        self.pos_embed_enc = nn.Parameter(torch.randn(1, self.num_patches, emb_dim))
+        
+        # Embeddings for each possible digit (0-10) with token_dim
+        # Shape: (11, 16) - each digit gets a 16-dimensional embedding
+        self.digit_embeddings = nn.Parameter(torch.randn(self.num_classes, self.token_dim))
+        
+        # Linear projection from token_dim to emb_dim
+        # Weight matrix shape: (emb_dim, token_dim) e.g., (64, 16)
+        self.token_projection = nn.Linear(self.token_dim, emb_dim)
 
         # Encoder
         self.encoder = MyEncoder(emb_dim=emb_dim, num_heads=num_heads, num_layers=num_layers)
@@ -173,39 +181,54 @@ class MultiDigitTransformer(nn.Module):
             nn.LayerNorm(emb_dim),
             nn.Linear(emb_dim, emb_dim),
             nn.GELU(),
-            nn.Linear(emb_dim, 10)  # 10 classes for MNIST
+            nn.Linear(emb_dim, self.num_classes)
         )
         
     def forward(self, x):
         batch_size = x.size(0)
         
+        # Encoder processing
         # Split into patches
         x = x.unfold(2, self.patch_size, self.patch_size).unfold(3, self.patch_size, self.patch_size)
         x = x.contiguous().view(batch_size, 1, -1, self.patch_size * self.patch_size)
         x = x.squeeze(1)  # shape: (batch_size, num_patches, patch_size*patch_size)
 
-        # Input embedding + positional encoding
-        x = self.patch_embed(x) + self.pos_embed  # shape: (batch_size, num_patches, emb_dim)
+        # Input embedding + positional encoding for encoder
+        x = self.patch_embed(x) + self.pos_embed_enc  # shape: (batch_size, num_patches, emb_dim)
 
         # Encoder processing
         encoder_output = self.encoder(x)
         
+        # Decoder processing
+        # Start with digit embeddings (num_digits, token_dim)
+        decoder_input = self.digit_embeddings[:self.num_digits]  # (num_digits, token_dim)
+        
+        # Project token embeddings to emb_dim
+        decoder_input = self.token_projection(decoder_input)  # (num_digits, emb_dim)
+        
         # Create mask for decoder
-        mask = create_mask(x.size(1))
+        mask = create_mask(self.num_digits)
         mask = mask.to(x.device)
         
-        # Decoder processing
-        decoder_output = self.decoder(x, encoder_output, mask)
-        
-        # Get predictions for each digit position
+        # Process each batch element
         outputs = []
-        for i in range(self.num_digits):
-            # Use the first token for classification
-            cls_token = decoder_output[:, 0, :]  # (B, emb_dim)
-            output = self.final_layer(cls_token)  # (B, 10)
-            outputs.append(output)
+        for b in range(batch_size):
+            # Get encoder output for this batch element
+            enc_out = encoder_output[b:b+1]  # (1, num_patches, emb_dim)
             
-        return torch.stack(outputs, dim=1)  # (B, num_digits, 10)
+            # Process through decoder
+            dec_out = self.decoder(decoder_input.unsqueeze(0), enc_out, mask)  # (1, num_digits, emb_dim)
+            
+            # Get predictions for each digit position
+            pos_outputs = []
+            for i in range(self.num_digits):
+                tokens = dec_out[0, i]  # (emb_dim,)
+                output = self.final_layer(tokens)  # (num_classes,)
+                pos_outputs.append(output)
+            
+            outputs.append(torch.stack(pos_outputs))  # (num_digits, num_classes)
+            
+        return torch.stack(outputs)  # (batch_size, num_digits, num_classes)
 
 class MyDecoder(nn.Module):
     def __init__(self, emb_dim=128, num_heads=8, num_layers=4):
@@ -378,11 +401,12 @@ def train(model, train_loader, criterion, optimizer, device, epoch):
         data, targets = data.to(device), targets.to(device)
         
         optimizer.zero_grad()
-        outputs = model(data)  # (B, num_digits, 10)
+        outputs = model(data)  # (B, num_digits, num_classes)
         
         # Reshape for loss calculation
-        outputs = outputs.view(-1, 10)  # (B * num_digits, 10)
-        targets = targets.view(-1)  # (B * num_digits)
+        batch_size = outputs.size(0)
+        outputs = outputs.reshape(batch_size * config["num_digits"], -1)  # (B * num_digits, num_classes)
+        targets = targets.reshape(-1)  # (B * num_digits)
         
         loss = criterion(outputs, targets)
         loss.backward()
@@ -414,10 +438,12 @@ def validate(model, val_loader, criterion, device, epoch):
     with torch.no_grad():
         for data, targets in val_loader:
             data, targets = data.to(device), targets.to(device)
-            outputs = model(data)
+            outputs = model(data)  # (B, num_digits, num_classes)
             
-            outputs = outputs.view(-1, 10)
-            targets = targets.view(-1)
+            # Reshape for loss calculation
+            batch_size = outputs.size(0)
+            outputs = outputs.reshape(batch_size * config["num_digits"], -1)  # (B * num_digits, num_classes)
+            targets = targets.reshape(-1)  # (B * num_digits)
             
             loss = criterion(outputs, targets)
             total_loss += loss.item()
