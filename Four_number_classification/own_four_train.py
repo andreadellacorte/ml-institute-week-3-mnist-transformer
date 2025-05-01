@@ -1,5 +1,6 @@
 import os
 os.environ['KMP_DUPLICATE_LIB_OK']='TRUE'
+os.environ["WANDB_MODE"] = "offline"  # Run in offline mode
 
 import torch
 import torch.nn as nn
@@ -12,6 +13,7 @@ from PIL import Image
 import random
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+from itertools import product
 
 # Configuration
 config = {
@@ -20,11 +22,25 @@ config = {
     "num_epochs": 20,
     "img_size": 56,  # 2x2 grid of 28x28 digits
     "patch_size": 7,
-    "emb_dim": 64,
+    "emb_dim": 16,
     "num_heads": 8,
     "num_layers": 4,
-    "num_digits": 3,
-    "train_frac": .1
+    "num_digits": 4,
+    "train_frac": .9
+}
+
+# Add sweep configuration at the top
+sweep_config = {
+    'method': 'grid',
+    'metric': {
+        'name': 'val_loss',
+        'goal': 'minimize'
+    },
+    'parameters': {
+        'emb_dim': {
+            'values': [16, 32, 64, 128, 256]
+        }
+    }
 }
 
 # Custom dataset for multiple MNIST digits
@@ -467,26 +483,67 @@ def validate(model, val_loader, criterion, device, epoch):
     
     return total_loss / len(val_loader), 100. * total_correct / total_samples
 
-# Training loop
-for epoch in range(config["num_epochs"]):
-    print(f'\nEpoch: {epoch+1}/{config["num_epochs"]}')
-    
-    train_loss, train_acc = train(model, train_loader, criterion, optimizer, device, epoch)
-    val_loss, val_acc = validate(model, val_loader, criterion, device, epoch)
-    
-    print(f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%')
-    print(f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
-    
-    wandb.log({
-        "epoch": epoch,
-        "train_loss": train_loss,
-        "train_accuracy": train_acc,
-        "val_loss": val_loss,
-        "val_accuracy": val_acc
-    })
+# At the bottom, replace the __main__ block with a manual sweep loop
+if __name__ == "__main__":
+    import sys
+    emb_dim_values = [16, 32, 64, 128, 256]
+    num_layers_values = [2, 4, 6]
+    num_heads_values = [2, 4, 8]
+    patch_size_values = [7, 14]
 
-# Save the model
-torch.save(model.state_dict(), 'multi_digit_transformer_custom.pth')
-print("Model saved to multi_digit_transformer_custom.pth")
+    if "--sweep" in sys.argv:
+        for emb_dim, num_layers, num_heads, patch_size in product(
+            emb_dim_values, num_layers_values, num_heads_values, patch_size_values
+        ):
+            print(f"\nRunning training with emb_dim={emb_dim}, num_layers={num_layers}, num_heads={num_heads}, patch_size={patch_size}")
+            config["emb_dim"] = emb_dim
+            config["num_layers"] = num_layers
+            config["num_heads"] = num_heads
+            config["patch_size"] = patch_size
 
-wandb.finish()
+            run = wandb.init(project="multi-digit-mnist-custom", config=config, reinit=True)
+            model = MultiDigitTransformer(
+                img_size=config["img_size"],
+                patch_size=config["patch_size"],
+                emb_dim=config["emb_dim"],
+                num_heads=config["num_heads"],
+                num_layers=config["num_layers"],
+                num_digits=config["num_digits"]
+            ).to(device)
+            optimizer = optim.Adam(model.parameters(), lr=config["learning_rate"])
+            for epoch in range(config["num_epochs"]):
+                print(f'\nEpoch: {epoch+1}/{config["num_epochs"]}')
+                train_loss, train_acc = train(model, train_loader, criterion, optimizer, device, epoch)
+                val_loss, val_acc = validate(model, val_loader, criterion, device, epoch)
+                print(f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%')
+                print(f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
+                wandb.log({
+                    "epoch": epoch,
+                    "train_loss": train_loss,
+                    "train_accuracy": train_acc,
+                    "val_loss": val_loss,
+                    "val_accuracy": val_acc
+                })
+            model_name = f'multi_digit_transformer_custom_e{emb_dim}_l{num_layers}_h{num_heads}_p{patch_size}.pth'
+            torch.save(model.state_dict(), model_name)
+            print(f"Model saved to {model_name}")
+            wandb.finish()
+    else:
+        # Normal training code (single config)
+        run = wandb.init(project="multi-digit-mnist-custom", config=config)
+        for epoch in range(config["num_epochs"]):
+            print(f'\nEpoch: {epoch+1}/{config["num_epochs"]}')
+            train_loss, train_acc = train(model, train_loader, criterion, optimizer, device, epoch)
+            val_loss, val_acc = validate(model, val_loader, criterion, device, epoch)
+            print(f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%')
+            print(f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
+            wandb.log({
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "train_accuracy": train_acc,
+                "val_loss": val_loss,
+                "val_accuracy": val_acc
+            })
+        torch.save(model.state_dict(), 'multi_digit_transformer_custom.pth')
+        print("Model saved to multi_digit_transformer_custom.pth")
+        wandb.finish()
