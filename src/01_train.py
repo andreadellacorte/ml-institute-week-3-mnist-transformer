@@ -3,7 +3,7 @@ import random
 import pickle
 import numpy as np
 from dataset import MNISTDataset
-from model import Encoder
+from model import ClassifierEncoder
 from torch.utils.data import DataLoader
 import wandb
 import time
@@ -16,7 +16,7 @@ sweep_config_full = {
         'goal': 'maximize'
     },
     'parameters': {
-        'dataset_type': {'values': ['torchvision']},
+        'dataset_type': {'values': ['huggingface']},
         'train_dataset_size': {'values': ['5000']},
         'test_dataset_size': {'values': ['full']},
         'rescale_dataset': {'values': [True, False]},
@@ -132,7 +132,7 @@ def train():
 
     # Initialize the model
 
-    encoder = Encoder(
+    classifier = ClassifierEncoder(
         NUM_CLASSES,
         config['emb_dim'],
         config['num_patches'],
@@ -146,24 +146,24 @@ def train():
 
     # Check for GPU availability
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    encoder = encoder.to(device)
+    classifier = classifier.to(device)
 
     # Log metrics to wandb
-    wandb.watch(encoder, log="all", log_graph=True)
+    wandb.watch(classifier, log="all", log_graph=True)
 
     # DataLoaders
     train_loader = DataLoader(train_dataset, config['batch_size'], shuffle=True)
     test_loader = DataLoader(test_dataset, config['batch_size'], shuffle=False)
 
     optimizer = torch.optim.Adam(
-        list(encoder.parameters()),
+        list(classifier.parameters()),
         lr=config['learning_rate'],
         weight_decay=config['weight_decay'])
     
-    print(f"Num of trainable parameters: {sum(p.numel() for p in encoder.parameters() if p.requires_grad)}")
+    print(f"Num of trainable parameters: {sum(p.numel() for p in classifier.parameters() if p.requires_grad)}")
 
     # Log the number of trainable parameters to wandb
-    num_trainable_params = sum(p.numel() for p in encoder.parameters() if p.requires_grad)
+    num_trainable_params = sum(p.numel() for p in classifier.parameters() if p.requires_grad)
     wandb.log({"num_trainable_params": num_trainable_params})
 
     loss_fn = torch.nn.CrossEntropyLoss()
@@ -173,11 +173,11 @@ def train():
 
     # Training and evaluation loop
     for epoch in range(config['epochs']):
-        encoder.train()
+        classifier.train()
         total_loss = 0
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
-            logits = encoder(images)
+            logits = classifier(images)
 
             loss = loss_fn(logits, labels)
 
@@ -193,14 +193,14 @@ def train():
         wandb.log({"epoch": epoch + 1, "train_loss": avg_train_loss})
 
         # Perform evaluation over the entire test set for correctness
-        encoder.eval()
+        classifier.eval()
         correct = 0
         total = 0
         total_loss = 0
         with torch.no_grad():
             for images, labels in test_loader:
                 images, labels = images.to(device), labels.to(device)
-                logits = encoder(images)
+                logits = classifier(images)
 
                 loss = loss_fn(logits, labels)
                 total_loss += loss.item() * labels.size(0)  # Accumulate loss weighted by batch size

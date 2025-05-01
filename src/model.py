@@ -3,8 +3,20 @@ import torch.nn.init as init
 import torch.nn.functional as F
 import math
 
-class Encoder(torch.nn.Module):
+class ClassifierEncoder(torch.nn.Module):
     def __init__(self, num_classes, emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism):
+        super(ClassifierEncoder, self).__init__()
+
+        self.model = torch.nn.Sequential(
+            Encoder(emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism),
+            OutputLayer(emb_dim, num_classes, output_mechanism)
+        )
+
+    def forward(self, x):
+        return self.model(x)
+
+class Encoder(torch.nn.Module):
+    def __init__(self, emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism):
         super(Encoder, self).__init__()
 
         self.model = torch.nn.Sequential(
@@ -12,7 +24,6 @@ class Encoder(torch.nn.Module):
             PositionalEncoding(emb_dim, num_patches),
             *[MultiHeadAttention(num_heads, emb_dim, encoder_emb_dim, masking, self_attending) for _ in range(num_layers)],
             FeedForward(emb_dim),
-            OutputLayer(emb_dim, num_classes, output_mechanism)
         )
 
     def forward(self, x):
@@ -22,20 +33,33 @@ class Transformer(torch.nn.Module):
     def __init__(self, num_classes, emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism):
         super(Transformer, self).__init__()
 
+        self.encoder = Encoder(num_classes, emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism)
+
         self.layers = torch.nn.ModuleList([
             torch.nn.ModuleDict({
-                "input_embedding": InputEmbedding(emb_dim, num_patches),
-                "input_positional_encoding": PositionalEncoding(emb_dim, num_patches),
-                "encoder": Encoder(num_classes, emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism),
                 "output_embedding": OutputEmbedding(emb_dim, num_classes),
+                "positional_encoding": PositionalEncoding(emb_dim, num_patches),
                 "multi_head_attention_1": MultiHeadAttention(num_heads, emb_dim, encoder_emb_dim, masking, self_attending),
                 "multi_head_attention_2": MultiHeadAttention(num_heads, emb_dim, encoder_emb_dim, masking, self_attending),
-                "output_layer": OutputLayer(emb_dim, num_classes, output_mechanism)
-            })
+                "feed_forward": FeedForward(emb_dim),
+            }) for _ in range(num_layers)
         ])
 
-    def forward(self, x):
-        self.layers[0]["input_embedding"](x)
+        self.output_embedding = OutputEmbedding(emb_dim, num_classes),
+
+        self.output_layer = OutputLayer(emb_dim, num_classes, output_mechanism)
+
+    def forward(self, inputs_x, outputs_x):
+        inputs_x = self.encoder(inputs_x)
+
+        for layer in self.layers:
+            outputs_x = layer["output_embedding"](outputs_x)
+            outputs_x = layer["positional_encoding"](outputs_x)
+            outputs_x = layer["multi_head_attention_1"](outputs_x)
+            outputs_x = layer["multi_head_attention_2"](outputs_x, inputs_x)
+            outputs_x = layer["feed_forward"](outputs_x)
+
+        return self.output_layer(outputs_x)
 
 class FeedForward(torch.nn.Module):
     def __init__(self, emb_dim):
