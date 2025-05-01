@@ -22,7 +22,7 @@ class Encoder(torch.nn.Module):
         self.model = torch.nn.Sequential(
             InputEmbedding(emb_dim, num_patches),
             PositionalEncoding(emb_dim, num_patches),
-            *[MultiHeadAttention(num_heads, emb_dim, encoder_emb_dim, masking, self_attending) for _ in range(num_layers)],
+            *[MultiHeadAttention(num_heads, emb_dim, emb_dim, encoder_emb_dim, masking, self_attending) for _ in range(num_layers)],
             FeedForward(emb_dim),
         )
 
@@ -30,17 +30,30 @@ class Encoder(torch.nn.Module):
         return self.model(x)
 
 class Transformer(torch.nn.Module):
-    def __init__(self, num_classes, emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism):
+    def __init__(
+            self,
+            num_classes,
+            emb_dim,
+            num_patches,
+            num_heads,
+            num_layers,
+            encoder_emb_dim,
+            masking,
+            self_attending,
+            output_mechanism
+        ):
         super(Transformer, self).__init__()
 
         self.encoder = Encoder(num_classes, emb_dim, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism)
 
+        decoder_emb_dim = num_classes*2
+
         self.layers = torch.nn.ModuleList([
             torch.nn.ModuleDict({
-                "output_embedding": OutputEmbedding(emb_dim, num_classes),
-                "positional_encoding": PositionalEncoding(emb_dim, num_patches),
-                "multi_head_attention_1": MultiHeadAttention(num_heads, emb_dim, encoder_emb_dim, masking, self_attending),
-                "multi_head_attention_2": MultiHeadAttention(num_heads, emb_dim, encoder_emb_dim, masking, self_attending),
+                "output_embedding": OutputEmbedding(decoder_emb_dim, num_classes),
+                "positional_encoding": PositionalEncoding(decoder_emb_dim, num_patches),
+                "multi_head_attention_1": MultiHeadAttention(num_heads, decoder_emb_dim, encoder_emb_dim, masking, self_attending),
+                "multi_head_attention_2": MultiHeadAttention(num_heads, decoder_emb_dim, encoder_emb_dim, masking, self_attending),
                 "feed_forward": FeedForward(emb_dim),
             }) for _ in range(num_layers)
         ])
@@ -144,19 +157,19 @@ class EncoderLayer(torch.nn.Module):
         return self.transformer_encoder(x)
 
 class MultiHeadAttention(torch.nn.Module):
-    def __init__(self, num_heads, emb_dim, encoder_emb_dim, masking, self_attending):
+    def __init__(self, num_heads, q_input_emb_dim, kv_input_emb_dim, internal_emb_dim, masking, self_attending):
         super(MultiHeadAttention, self).__init__()
 
         self.num_heads = num_heads
-        self.encoder_emb_dim = encoder_emb_dim
+        self.internal_emb_dim = internal_emb_dim
         self.self_attending = self_attending
         self.masking = masking
 
-        self.layer_norm = torch.nn.LayerNorm(emb_dim)
-        self.wQ = torch.nn.Linear(emb_dim, encoder_emb_dim * num_heads)
-        self.wK = torch.nn.Linear(emb_dim, encoder_emb_dim * num_heads)
-        self.wV = torch.nn.Linear(emb_dim, encoder_emb_dim * num_heads)
-        self.w0 = torch.nn.Linear(encoder_emb_dim * num_heads, emb_dim)
+        self.layer_norm = torch.nn.LayerNorm(q_input_emb_dim)
+        self.wQ = torch.nn.Linear(q_input_emb_dim, internal_emb_dim * num_heads)
+        self.wK = torch.nn.Linear(kv_input_emb_dim, internal_emb_dim * num_heads)
+        self.wV = torch.nn.Linear(kv_input_emb_dim, internal_emb_dim * num_heads)
+        self.w0 = torch.nn.Linear(internal_emb_dim * num_heads, q_input_emb_dim)
 
         # Initialize weights and biases
         init.kaiming_uniform_(self.wV.weight, nonlinearity='relu')
@@ -181,14 +194,14 @@ class MultiHeadAttention(torch.nn.Module):
 
         # Use encoder_input for wQ if provided, otherwise use x
         q_input = encoder_input if encoder_input is not None else x
-        q = self.wQ(q_input).view(batch_size, seq_len, self.num_heads, self.encoder_emb_dim).transpose(1, 2)
+        q = self.wQ(q_input).view(batch_size, seq_len, self.num_heads, self.internal_emb_dim).transpose(1, 2)
 
         # Use x for wK and wV
-        k = self.wK(x).view(batch_size, seq_len, self.num_heads, self.encoder_emb_dim).transpose(1, 2)
-        v = self.wV(x).view(batch_size, seq_len, self.num_heads, self.encoder_emb_dim).transpose(1, 2)
+        k = self.wK(x).view(batch_size, seq_len, self.num_heads, self.internal_emb_dim).transpose(1, 2)
+        v = self.wV(x).view(batch_size, seq_len, self.num_heads, self.internal_emb_dim).transpose(1, 2)
 
         # Calculate attention scores from Q * K^T
-        scores = q @ k.transpose(-2, -1) / (math.sqrt(self.encoder_emb_dim))
+        scores = q @ k.transpose(-2, -1) / (math.sqrt(self.internal_emb_dim))
 
         if self.masking:
             if self.self_attending:
