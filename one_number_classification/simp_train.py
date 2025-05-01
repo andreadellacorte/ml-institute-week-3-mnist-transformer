@@ -7,185 +7,222 @@ from torch.utils.data import DataLoader  # Data loading utilities
 from simp_transform_setup import MNISTTransformer  # Import only MNISTTransformer
 import wandb  # Weights & Biases for experiment tracking
 import numpy as np  # Numerical computing
+import datetime
 
-# Ask user to choose model type
-print("\nChoose which model to use:")
-print("1. Library Transformer")
-print("2. Custom MyEncoder")
-choice = input("Enter 1 or 2: ")
-
-while choice not in ['1', '2']:
-    print("Invalid choice. Please enter 1 or 2.")
-    choice = input("Enter 1 or 2: ")
-
-option = 'my_own' if choice == '2' else 'library'
-
-# Initialize Weights & Biases for experiment tracking
-# This creates a new run in the specified project
-wandb.init(project="mnist-transformer", entity=None)  # Replace None with your wandb username if needed
-
-# Set the device (GPU if available, otherwise CPU)
-# This determines where the computations will be performed
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Using device: {device}")
-
-# Define hyperparameters in a configuration dictionary
-# These parameters control the model architecture and training process
-config = {
-    "batch_size": 64,  # Number of samples processed in one forward/backward pass
-    "learning_rate": 0.001,  # Step size for optimization
-    "num_epochs": 10,  # Number of complete passes through the training dataset
-    "img_size": 28,  # Size of MNIST images (28x28)
-    "patch_size": 7,  # Size of patches for the transformer
-    "emb_dim": 64,  # Dimension of the embedding space
-    "num_heads": 4,  # Number of attention heads in the transformer
-    "num_layers": 2,  # Number of transformer encoder layers
-    "num_classes": 10,  # Number of output classes (digits 0-9)
-    "option": option  # Add the option parameter
+# Define base hyperparameters
+hyperparameters = {
+    'option': 'library',
+    'batch_size': 64,
+    'learning_rate': 0.001,
+    'num_epochs': 1,
+    'img_size': 28,
+    'patch_size': 7,
+    'emb_dim': 64,
+    'num_heads': 4,
+    'num_layers': 2,
+    'train_frac': 0.5,
+    'weight_decay': 0.01,
+    'patience': 3
 }
 
-# Log the configuration to Weights & Biases
-# This allows tracking of hyperparameters across experiments
-wandb.config.update(config)
-
-# Define image transformations for preprocessing
-# These transformations are applied to each image before training
-transform = transforms.Compose([
-    transforms.ToTensor(),  # Convert PIL Image to PyTorch tensor
-    transforms.Normalize((0.1307,), (0.3081,))  # Normalize using MNIST mean and std
-])
-
-# Load the MNIST dataset
-# train=True for training set, train=False for test set
-# download=True will download the dataset if not already present
-train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
-
-# Create data loaders for efficient batch processing
-# DataLoader handles batching, shuffling, and parallel loading
-train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=config["batch_size"], shuffle=False)
-
-# Initialize the model with the chosen option
-print(f"Using {'Custom MyEncoder' if option == 'my_own' else 'Library Transformer'} model")
-model = MNISTTransformer(
-    img_size=config["img_size"],
-    patch_size=config["patch_size"],
-    emb_dim=config["emb_dim"],
-    num_heads=config["num_heads"],
-    num_layers=config["num_layers"],
-    num_classes=config["num_classes"],
-    option=option  # Pass the option parameter
-).to(device)
-
-# Set up Weights & Biases to watch the model
-# This enables tracking of gradients and parameters
-wandb.watch(model, log="all")
-
-# Define the loss function and optimizer
-# CrossEntropyLoss is suitable for multi-class classification
-# Adam optimizer is used for parameter updates
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=config["learning_rate"])
-
-#print the number of parameters in the model
-print(f"Number of parameters in the model: {sum(p.numel() for p in model.parameters())}")
-# Training function for one epoch
-def train(model, train_loader, criterion, optimizer, device, epoch):
-    model.train()  # Set model to training mode
-    total_loss = 0  # Accumulator for total loss
-    correct = 0  # Counter for correct predictions
-    total = 0  # Counter for total samples
-    
-    # Iterate over batches in the training set
-    for batch_idx, (data, target) in enumerate(train_loader):
-        # Move data to the appropriate device
-        data, target = data.to(device), target.to(device)
+def train():
+    with wandb.init(config=hyperparameters):
+        config = wandb.config
         
-        # Zero the gradients before forward pass
-        optimizer.zero_grad()
+        # Update hyperparameters with sweep values
+        hyperparameters.update({
+            'learning_rate': config.learning_rate,
+            'weight_decay': config.weight_decay,
+            'patch_size': config.patch_size,
+            'emb_dim': config.emb_dim,
+            'num_heads': config.num_heads,
+            'num_layers': config.num_layers,
+            'train_frac': config.train_frac
+        })
         
-        # Forward pass: compute predictions
-        output = model(data)
+        # Set the device
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {device}")
         
-        # Compute loss
-        loss = criterion(output, target)
+        # Print current configuration
+        print("\n" + "="*50)
+        print("CURRENT CONFIGURATION:")
+        print("="*50)
+        for key, value in hyperparameters.items():
+            print(f"{key:15}: {value}")
+        print("="*50 + "\n")
         
-        # Backward pass: compute gradients
-        loss.backward()
+        # Define image transformations
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.1307,), (0.3081,))
+        ])
         
-        # Update model parameters
-        optimizer.step()
+        # Load MNIST dataset
+        train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+        test_dataset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
         
-        # Update statistics
-        total_loss += loss.item()
-        _, predicted = output.max(1)  # Get predicted class
-        total += target.size(0)
-        correct += predicted.eq(target).sum().item()
+        # Split training data
+        train_size = int(len(train_dataset) * hyperparameters['train_frac'])
+        val_size = len(train_dataset) - train_size
+        train_dataset, val_dataset = torch.utils.data.random_split(train_dataset, [train_size, val_size])
         
-        # Log batch metrics every 100 batches
-        if batch_idx % 100 == 0:
-            wandb.log({
-                "train_batch_loss": loss.item(),
-                "train_batch_accuracy": 100. * correct / total,
-                "epoch": epoch,
-                "batch": batch_idx
-            })
-            print(f'Train Epoch: [{batch_idx}/{len(train_loader)}]\tLoss: {loss.item():.6f}')
-    
-    # Return average loss and accuracy for the epoch
-    return total_loss / len(train_loader), 100. * correct / total
-
-# Evaluation function for the test set
-def evaluate(model, test_loader, criterion, device, epoch):
-    model.eval()  # Set model to evaluation mode
-    total_loss = 0
-    correct = 0
-    total = 0
-    
-    # Disable gradient computation for evaluation
-    with torch.no_grad():
-        for data, target in test_loader:
-            data, target = data.to(device), target.to(device)
-            output = model(data)
-            loss = criterion(output, target)
+        # Create data loaders with adjusted batch sizes to maintain same number of batches
+        effective_batch_size = int(hyperparameters['batch_size'] / hyperparameters['train_frac'])
+        train_loader = DataLoader(train_dataset, batch_size=effective_batch_size, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=effective_batch_size, shuffle=False)
+        test_loader = DataLoader(test_dataset, batch_size=effective_batch_size, shuffle=False)
+        
+        print(f"\nData Loading Summary:")
+        print(f"Total training samples: {len(train_dataset)}")
+        print(f"Total validation samples: {len(val_dataset)}")
+        print(f"Effective batch size: {effective_batch_size}")
+        print(f"Number of batches per epoch: {len(train_loader)}\n")
+        
+        # Initialize model
+        model = MNISTTransformer(
+            img_size=hyperparameters['img_size'],
+            patch_size=hyperparameters['patch_size'],
+            emb_dim=hyperparameters['emb_dim'],
+            num_heads=hyperparameters['num_heads'],
+            num_layers=hyperparameters['num_layers'],
+            num_classes=10,
+            option=hyperparameters['option']
+        ).to(device)
+        
+        # Print model summary
+        print(f"\nModel Summary:")
+        print(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
+        print(f"Transformer type: {'Library' if hyperparameters['option'] == 'library' else 'Custom'}")
+        
+        # Loss function and optimizer
+        criterion = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(
+            model.parameters(), 
+            lr=hyperparameters['learning_rate'],
+            weight_decay=hyperparameters['weight_decay']
+        )
+        
+        # Training function
+        def train_epoch(model, train_loader, criterion, optimizer, device, epoch):
+            model.train()
+            total_loss = 0
+            correct = 0
+            total = 0
             
-            total_loss += loss.item()
-            _, predicted = output.max(1)
-            total += target.size(0)
-            correct += predicted.eq(target).sum().item()
-    
-    # Return average loss and accuracy for the test set
-    return total_loss / len(test_loader), 100. * correct / total
+            for batch_idx, (data, target) in enumerate(train_loader):
+                data, target = data.to(device), target.to(device)
+                
+                optimizer.zero_grad()
+                output = model(data)
+                loss = criterion(output, target)
+                loss.backward()
+                optimizer.step()
+                
+                total_loss += loss.item()
+                _, predicted = output.max(1)
+                total += target.size(0)
+                correct += predicted.eq(target).sum().item()
+                
+                if batch_idx % 100 == 0:
+                    print(f'Train Epoch: {epoch} [{batch_idx}/{len(train_loader)}]\tLoss: {loss.item():.6f}')
+            
+            return total_loss / len(train_loader), 100. * correct / total
+        
+        # Validation function
+        def validate(model, val_loader, criterion, device):
+            model.eval()
+            total_loss = 0
+            correct = 0
+            total = 0
+            
+            with torch.no_grad():
+                for data, target in val_loader:
+                    data, target = data.to(device), target.to(device)
+                    output = model(data)
+                    loss = criterion(output, target)
+                    
+                    total_loss += loss.item()
+                    _, predicted = output.max(1)
+                    total += target.size(0)
+                    correct += predicted.eq(target).sum().item()
+            
+            return total_loss / len(val_loader), 100. * correct / total
+        
+        # Training loop with early stopping
+        best_val_loss = float('inf')
+        epochs_no_improve = 0
+        ts = datetime.datetime.now().strftime('%Y_%m_%d__%H_%M_%S')
+        
+        for epoch in range(1, hyperparameters['num_epochs'] + 1):
+            print(f'\nEpoch: {epoch}/{hyperparameters["num_epochs"]}')
+            
+            train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, device, epoch)
+            val_loss, val_acc = validate(model, val_loader, criterion, device)
+            
+            # Log metrics to wandb
+            wandb.log({
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "train_accuracy": train_acc,
+                "val_loss": val_loss,
+                "val_accuracy": val_acc
+            })
+            
+            print(f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%')
+            print(f'Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.2f}%')
+            
+            # Early stopping check
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                epochs_no_improve = 0
+                torch.save(model.state_dict(), f'mnist_transformer_{hyperparameters["option"]}_{ts}_best.pth')
+            else:
+                epochs_no_improve += 1
+                print(f"No improvement. Early stop patience: {epochs_no_improve}/{hyperparameters['patience']}")
+            
+            if epochs_no_improve >= hyperparameters['patience']:
+                print("Early stopping triggered.")
+                break
+        
+        # Save final model
+        torch.save(model.state_dict(), f'mnist_transformer_{hyperparameters["option"]}_{ts}_final.pth')
+        print(f"Model saved to mnist_transformer_{hyperparameters['option']}_{ts}_final.pth")
 
-# Main training loop
-for epoch in range(config["num_epochs"]):
-    print(f'\nEpoch: {epoch+1}/{config["num_epochs"]}')
-    
-    # Training phase
-    train_loss, train_acc = train(model, train_loader, criterion, optimizer, device, epoch)
-    
-    # Evaluation phase
-    test_loss, test_acc = evaluate(model, test_loader, criterion, device, epoch)
-    
-    # Log epoch metrics to Weights & Biases
-    wandb.log({
-        "epoch": epoch,
-        "train_loss": train_loss,
-        "train_accuracy": train_acc,
-        "test_loss": test_loss,
-        "test_accuracy": test_acc
-    })
-    
-    # Print epoch results
-    print(f'Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.2f}%')
-    print(f'Test Loss: {test_loss:.4f}, Test Acc: {test_acc:.2f}%')
+# Define sweep configuration
+sweep_config = {
+    'method': 'grid',  # or 'random', 'bayes'
+    'metric': {
+        'name': 'val_loss',
+        'goal': 'minimize'
+    },
+    'parameters': {
+        'learning_rate': {
+            'values': [1e-3, 1e-4]
+        },
+        'weight_decay': {
+            'values': [0.01, 0.001]
+        },
+        'patch_size': {
+            'values': [7, 14]
+        },
+        'emb_dim': {
+            'values': [64, 128]
+        },
+        'num_heads': {
+            'values': [4, 8]
+        },
+        'num_layers': {
+            'values': [2, 4]
+        },
+        'train_frac': {
+            'values': [0.2, 0.5, 0.8]
+        }
+    }
+}
 
-# Save the trained model
-# This saves only the model parameters, not the entire model
-model_save_name = f'mnist_transformer_{option}.pth'
-torch.save(model.state_dict(), model_save_name)
-print(f"Model saved to {model_save_name}")
+# Initialize sweep
+sweep_id = wandb.sweep(sweep_config, project="mnist-transformer-sweep")
 
-# Finish the Weights & Biases run
-wandb.finish()
+# Run the sweep
+wandb.agent(sweep_id, function=train)

@@ -26,7 +26,7 @@ class MyEncoder(nn.Module):
         K = self.wK(x)  # (batch_size, seq_len, emb_dim)
         
         # Reshape for multi-head attention
-        # Split the embedding dimension into num_heads heads
+        # Split the embedding dimension into num_heads heads: This allows for parallel attention computations
         V = V.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)  # (batch_size, num_heads, seq_len, head_dim)
         Q = Q.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)  # (batch_size, num_heads, seq_len, head_dim)
         K = K.view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)  # (batch_size, num_heads, seq_len, head_dim)
@@ -60,7 +60,7 @@ class MNISTTransformer(nn.Module):
 
         # Choose transformer implementation based on option
         if option == 'my_own':
-            self.transformer = MyEncoder(emb_dim=emb_dim, weight_col=24, num_heads=num_heads, num_layers=num_layers)
+            self.transformer = MyEncoder(emb_dim=emb_dim, num_heads=num_heads, num_layers=num_layers)
         else:
             encoder_layer = nn.TransformerEncoderLayer(d_model=emb_dim, nhead=num_heads, batch_first=True)
             self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
