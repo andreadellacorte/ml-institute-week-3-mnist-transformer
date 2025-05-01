@@ -23,8 +23,8 @@ config = {
     "emb_dim": 64,
     "num_heads": 8,
     "num_layers": 4,
-    "num_digits": 4,
-    "train_frac": 0.9
+    "num_digits": 3,
+    "train_frac": .1
 }
 
 # Custom dataset for multiple MNIST digits
@@ -371,9 +371,20 @@ mnist_dataset = datasets.MNIST(root='./data', train=True, download=True, transfo
 
 # Create multi-digit dataset
 multi_dataset = MultiMNISTDataset(mnist_dataset, num_digits=config["num_digits"], transform=transform)
-train_size = int(config["train_frac"] * len(multi_dataset))
-val_size = len(multi_dataset) - train_size
-train_dataset, val_dataset = torch.utils.data.random_split(multi_dataset, [train_size, val_size])
+N = len(multi_dataset)
+val_size = int(0.1 * N)
+train_candidates = N - val_size
+train_size = int(config["train_frac"] * train_candidates)
+unused_size = train_candidates - train_size
+
+lengths = [train_size, val_size]
+if unused_size > 0:
+    lengths.append(unused_size)
+
+splits = torch.utils.data.random_split(multi_dataset, lengths)
+train_dataset = splits[0]
+val_dataset = splits[1]
+# Optionally: unused_dataset = splits[2] if unused_size > 0 else None
 
 # Create data loaders
 train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
