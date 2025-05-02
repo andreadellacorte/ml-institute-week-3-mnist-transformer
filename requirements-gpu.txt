@@ -5,3 +5,4 @@ torchvision
 wandb
 huggingface_hub[cli]
 sortedcontainers
+pillow

@@ -8,7 +8,7 @@ class ClassifierEncoder(torch.nn.Module):
         super(ClassifierEncoder, self).__init__()
 
         self.model = torch.nn.Sequential(
-            Encoder(emb_dim, patch_size, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism),
+            Encoder(emb_dim, patch_size, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending),
             OutputLayer(emb_dim, num_classes, output_mechanism)
         )
 
@@ -16,7 +16,7 @@ class ClassifierEncoder(torch.nn.Module):
         return self.model(x)
 
 class Encoder(torch.nn.Module):
-    def __init__(self, emb_dim, patch_size, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism):
+    def __init__(self, emb_dim, patch_size, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending):
         super(Encoder, self).__init__()
 
         self.model = torch.nn.Sequential(
@@ -32,34 +32,37 @@ class Encoder(torch.nn.Module):
 class Transformer(torch.nn.Module):
     def __init__(
             self,
-            num_classes,
             emb_dim,
             patch_size,
-            num_patches,
+            num_classes,
+            num_patches_per_digit,
             num_heads,
             num_layers,
             encoder_emb_dim,
+            decoder_emb_dim,
+            internal_decoder_emb_dim,
+            output_vocab_size,
+            max_sequence_length,
             masking,
             self_attending,
             output_mechanism
         ):
         super(Transformer, self).__init__()
+        
 
-        self.encoder = Encoder(num_classes, emb_dim, patch_size, num_patches, num_heads, num_layers, encoder_emb_dim, masking, self_attending, output_mechanism)
+        # In the encoder, the 
 
-        decoder_emb_dim = num_classes*2
+        self.encoder = Encoder(emb_dim, patch_size, num_patches_per_digit * max_sequence_length, num_heads, num_layers, encoder_emb_dim, masking, self_attending)
 
         self.layers = torch.nn.ModuleList([
             torch.nn.ModuleDict({
-                "output_embedding": OutputEmbedding(decoder_emb_dim, num_classes),
-                "positional_encoding": PositionalEncoding(decoder_emb_dim, num_patches),
-                "multi_head_attention_1": MultiHeadAttention(num_heads, decoder_emb_dim, encoder_emb_dim, True, self_attending),
-                "multi_head_attention_2": MultiHeadAttention(num_heads, decoder_emb_dim, encoder_emb_dim, False, self_attending),
+                "output_embedding": OutputEmbedding(decoder_emb_dim, output_vocab_size),
+                "positional_encoding": PositionalEncoding(decoder_emb_dim, max_sequence_length),
+                "multi_head_attention_1": MultiHeadAttention(num_heads, decoder_emb_dim, decoder_emb_dim, internal_decoder_emb_dim, True, self_attending),
+                "multi_head_attention_2": MultiHeadAttention(num_heads, emb_dim, decoder_emb_dim, internal_decoder_emb_dim, False, self_attending),
                 "feed_forward": FeedForward(emb_dim),
             }) for _ in range(num_layers)
         ])
-
-        self.output_embedding = OutputEmbedding(emb_dim, num_classes),
 
         self.output_layer = OutputLayer(emb_dim, num_classes, output_mechanism)
 
@@ -97,18 +100,6 @@ class FeedForward(torch.nn.Module):
         x = self.layer_norm(x)
         return self.linear2(F.relu(self.linear1(x))) + input
 
-class OutputEmbedding(torch.nn.Module):
-    def __init__(self, emb_dim, num_classes):
-        super(OutputEmbedding, self).__init__()
-
-        self.linear = torch.nn.Linear(emb_dim, num_classes)
-
-        init.zeros_(self.embs.bias)
-        init.kaiming_uniform_(self.embs.weight, nonlinearity='relu')
-
-    def forward(self, x):
-        return self.linear(x)
-
 class InputEmbedding(torch.nn.Module):
     def __init__(self, emb_dim, patch_size):
         super(InputEmbedding, self).__init__()
@@ -130,30 +121,34 @@ class InputEmbedding(torch.nn.Module):
 
         return self.linear(x)
 
-class PositionalEncoding(torch.nn.Module):
-    def __init__(self, emb_dim, num_patches):
-        super(PositionalEncoding, self).__init__()
-
-        self.pos_embed = torch.nn.Parameter(torch.randn(1, num_patches, emb_dim))
-
-    def forward(self, x):
-        return x + self.pos_embed
-
-class EncoderLayer(torch.nn.Module):
-    def __init__(self, emb_dim, num_heads, num_layers):
-        super(EncoderLayer, self).__init__()
+class OutputEmbedding(torch.nn.Module):
+    def __init__(self, emb_dim, vocab_size):
+        super(OutputEmbedding, self).__init__()
+        self.embedding = torch.nn.Embedding(vocab_size, emb_dim)
         
-        encoder_layer = torch.nn.TransformerEncoderLayer(
-            d_model=emb_dim,
-            nhead=num_heads,
-            batch_first=True)
-
-        self.transformer_encoder = torch.nn.TransformerEncoder(
-            encoder_layer,
-            num_layers=num_layers)
+        # Initialize weights using normal distribution
+        init.normal_(self.embedding.weight, mean=0.0, std=0.02)
 
     def forward(self, x):
-        return self.transformer_encoder(x)
+        # Ensure input is long tensor for embedding lookup
+        x = x.long()
+        return self.embedding(x)
+
+class PositionalEncoding(torch.nn.Module):
+    def __init__(self, emb_dim, num_embeddings):
+        super(PositionalEncoding, self).__init__()
+        self.num_embeddings = num_embeddings
+
+        self.pos_embed = torch.nn.Parameter(torch.randn(1, num_embeddings, emb_dim))
+
+    def forward(self, x):
+        # Get the actual sequence length from the input
+        actual_len = x.size(1)
+        
+        # Use only the positional embeddings up to the actual sequence length
+        pos_embed_used = self.pos_embed[:, :actual_len, :]
+        
+        return x + pos_embed_used
 
 class MultiHeadAttention(torch.nn.Module):
     def __init__(self, num_heads, q_input_emb_dim, kv_input_emb_dim, internal_emb_dim, masking, self_attending):

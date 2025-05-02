@@ -76,5 +76,6 @@ MNIST
 # Learnings
 
 Using encoder as unit test for transformer
-Aggregation
+Composing
 Modular reuse
+Deep learning unit test

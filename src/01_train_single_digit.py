@@ -8,6 +8,8 @@ from torch.utils.data import DataLoader
 import wandb
 import time
 import math
+import matplotlib.pyplot as plt
+import os
 
 # Define the sweep configuration
 sweep_config_full = {
@@ -66,6 +68,9 @@ sweep_config_single = {
 
 sweep_config = sweep_config_single
 
+# Configure wandb offline mode if specified
+os.environ['WANDB_MODE'] = 'offline'
+
 print("Loading datasets...")
 
 # Extract all required training and testing data based on sweep_config
@@ -104,6 +109,10 @@ def train():
     RANDOM_SEED = 3407    
     PATCH_SIZE = int(math.sqrt(28 * 28 / config['num_patches']))
 
+    print(f"NUM_CLASSES: {NUM_CLASSES}")
+    print(f"RANDOM_SEED: {RANDOM_SEED}")
+    print(f"PATCH SIZE: {PATCH_SIZE}")
+
     # Set random seed for reproducibility
     torch.manual_seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
@@ -122,15 +131,16 @@ def train():
         sweep_train_dataset['label'],
         config['normalize_dataset'],
         config['rescale_dataset']
-        #config['num_patches']
     )
     test_dataset = MNISTDataset(
         sweep_test_dataset['image'],
         sweep_test_dataset['label'],
         config['normalize_dataset'],
         config['rescale_dataset']
-        #config['num_patches']
     )
+
+    print(f"First training image shape: {train_dataset[0][0].shape}")
+    print(f"First training label shape: {train_dataset[0][1].shape}")
 
     # Initialize the model
 
