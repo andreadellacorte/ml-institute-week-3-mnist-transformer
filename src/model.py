@@ -42,13 +42,14 @@ class Transformer(torch.nn.Module):
             internal_decoder_emb_dim,
             output_vocab_size,
             max_sequence_length,
-            masking,
-            self_attending,
+            masking_encoder,
+            self_attending_encoder,
+            self_attending_decoder,
             output_mechanism
         ):
         super(Transformer, self).__init__()
 
-        self.encoder = Encoder(emb_dim, patch_size, num_patches_per_digit * max_sequence_length, num_heads, num_layers, encoder_emb_dim, masking, self_attending)
+        self.encoder = Encoder(emb_dim, patch_size, num_patches_per_digit * max_sequence_length, num_heads, num_layers, encoder_emb_dim, masking_encoder, self_attending_encoder)
 
         # For decoder, we need to account for start and end tokens in max length
         actual_max_length = max_sequence_length + 2  # +2 for <start> and <end> tokens
@@ -60,8 +61,8 @@ class Transformer(torch.nn.Module):
         # Ensure decoder layers maintain consistent embedding dimensions
         self.layers = torch.nn.ModuleList([
             torch.nn.ModuleDict({
-                "multi_head_attention_1": MultiHeadAttention(num_heads, decoder_emb_dim, decoder_emb_dim, internal_decoder_emb_dim, True, self_attending),
-                "multi_head_attention_2": MultiHeadAttention(num_heads, decoder_emb_dim, emb_dim, internal_decoder_emb_dim, False, self_attending),
+                "multi_head_attention_1": MultiHeadAttention(num_heads, decoder_emb_dim, decoder_emb_dim, internal_decoder_emb_dim, True, self_attending_decoder),
+                "multi_head_attention_2": MultiHeadAttention(num_heads, decoder_emb_dim, emb_dim, internal_decoder_emb_dim, False, self_attending_decoder),
                 "feed_forward": FeedForward(decoder_emb_dim),
             }) for _ in range(num_layers)
         ])

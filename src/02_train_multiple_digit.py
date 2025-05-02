@@ -21,22 +21,27 @@ sweep_config_full = {
     },
     'parameters': {
         'dataset_type': {'values': ['huggingface']},
-        'train_dataset_size': {'values': ['5000']},
-        'test_dataset_size': {'values': ['full']},
-        'rescale_dataset': {'values': [True, False]},
-        'normalize_dataset': {'values': [True, False]},
+        'train_dataset_size': {'values': ['1000']},
+        'test_dataset_size': {'values': ['100']},
+        'normalize_dataset': {'values': [True]},
+        'rescale_dataset': {'values': [True]},
         'batch_size': {'values': [512]},
-        'emb_dim': {'values': [16]},
-        'encoder_emb_dim': {'values': [16]},
-        'learning_rate': {'values': [0.001, 0.002]},
-        'weight_decay': {'values': [0.001]},
-        'output_mechanism': {'values': ['mean', 'first']},
-        'num_patches_per_digit': {'values': [16]},
+        'emb_dim': {'values': [16, 32, 64, 128]},
+        'encoder_emb_dim': {'values': [16, 32, 64, 128]},
+        'decoder_emb_dim': {'values': [16, 32, 64, 128]},
+        'internal_decoder_emb_dim': {'values': [16, 32, 64, 128]},
+        'max_sequence_length': {'values': [4]},
+        'cluster_size_min' : {'values': [1]},
+        'learning_rate': {'values': [0.001]},
+        'weight_decay': {'values': [0.0, 0.01]},
+        'num_patches_per_digit': {'values': [4, 16]},
+        'output_mechanism' : {'values': ['mean']},
         'num_heads': {'values': [1, 2, 4, 8, 16]},
         'num_layers': {'values': [1, 2, 4, 8, 16]},
-        'epochs': {'values': [10]},
-        'masking': {'values': [False, True]},
-        'self_attending': {'values': [False, True]},
+        'epochs': {'values': [5]},
+        'masking_encoder': {'values': [True, False]},
+        'self_attending_encoder': {'values': [True, False]},
+        'self_attending_decoder': {'values': [True, False]}
     }
 }
 
@@ -48,31 +53,34 @@ sweep_config_single = {
     },
     'parameters': {
         'dataset_type': {'values': ['huggingface']},
-        'train_dataset_size': {'values': ['5000']},
-        'test_dataset_size': {'values': ['full']},
+        'train_dataset_size': {'values': ['1000']},
+        'test_dataset_size': {'values': ['1000']},
         'normalize_dataset': {'values': [True]},
         'rescale_dataset': {'values': [True]},
-        'batch_size': {'values': [512]},
-        'emb_dim': {'values': [16]},
-        'encoder_emb_dim': {'values': [16]},
-        'decoder_emb_dim': {'values': [16]},
-        'internal_decoder_emb_dim': {'values': [16]},
-        'max_sequence_length': {'values': [10]},
+        'batch_size': {'values': [32]},
+        'emb_dim': {'values': [32]},
+        'encoder_emb_dim': {'values': [32]},
+        'decoder_emb_dim': {'values': [32]},
+        'internal_decoder_emb_dim': {'values': [32]},
+        'max_sequence_length': {'values': [1, 2, 4, 8, 12]},
+        'cluster_size_min' : {'values': [1]},
         'learning_rate': {'values': [0.001]},
         'weight_decay': {'values': [0.0]},
         'num_patches_per_digit': {'values': [4]},
         'output_mechanism' : {'values': ['mean']},
         'num_heads': {'values': [2]},
         'num_layers': {'values': [2]},
-        'epochs': {'values': [5]},
+        'epochs': {'values': [20]},
         'masking': {'values': [False]},
-        'self_attending': {'values': [True]},
+        'masking_encoder': {'values': [True]},
+        'self_attending_encoder': {'values': [True]},
+        'self_attending_decoder': {'values': [True]}
     }
 }
 
-sweep_config = sweep_config_single
+sweep_config = sweep_config_full
 
-os.environ['WANDB_MODE'] = 'offline'
+# os.environ['WANDB_MODE'] = 'offline'
 
 print("Loading datasets...")
 
@@ -138,8 +146,8 @@ def train():
     random.seed(RANDOM_SEED)
     torch.cuda.manual_seed(RANDOM_SEED)
     torch.cuda.manual_seed_all(RANDOM_SEED)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    # torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.benchmark = False
 
     sweep_train_dataset = train_data[config['dataset_type']][config['train_dataset_size']]
     sweep_test_dataset = test_data[config['dataset_type']][config['test_dataset_size']]
@@ -162,7 +170,7 @@ def train():
         config['max_sequence_length'],
         config['normalize_dataset'],
         config['rescale_dataset'],
-        cluster_size_min=1,
+        cluster_size_min=config['cluster_size_min'],
         cluster_size_max=config['max_sequence_length'],
     )
 
@@ -189,8 +197,9 @@ def train():
         internal_decoder_emb_dim = config['internal_decoder_emb_dim'],
         output_vocab_size = len(WORD_TO_INDEX_VOCAB),
         max_sequence_length = config['max_sequence_length'],
-        masking = config['masking'],
-        self_attending = config['self_attending'],
+        masking_encoder = config['masking_encoder'],
+        self_attending_encoder = config['self_attending_encoder'],
+        self_attending_decoder = config['self_attending_decoder'],
         output_mechanism = config['output_mechanism']
     )
 
