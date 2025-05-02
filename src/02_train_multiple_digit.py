@@ -1,3 +1,4 @@
+from PIL import Image
 import torch
 import random
 import pickle
@@ -30,7 +31,7 @@ sweep_config_full = {
         'learning_rate': {'values': [0.001, 0.002]},
         'weight_decay': {'values': [0.001]},
         'output_mechanism': {'values': ['mean', 'first']},
-        'num_patches': {'values': [16]},
+        'num_patches_per_digit': {'values': [16]},
         'num_heads': {'values': [1, 2, 4, 8, 16]},
         'num_layers': {'values': [1, 2, 4, 8, 16]},
         'epochs': {'values': [10]},
@@ -56,13 +57,13 @@ sweep_config_single = {
         'encoder_emb_dim': {'values': [16]},
         'decoder_emb_dim': {'values': [16]},
         'internal_decoder_emb_dim': {'values': [16]},
-        'max_sequence_length': {'values': [2]},
+        'max_sequence_length': {'values': [10]},
         'learning_rate': {'values': [0.001]},
-        'weight_decay': {'values': [0.01]},
-        'num_patches': {'values': [4]},
+        'weight_decay': {'values': [0.0]},
+        'num_patches_per_digit': {'values': [4]},
         'output_mechanism' : {'values': ['mean']},
-        'num_heads': {'values': [1]},
-        'num_layers': {'values': [1]},
+        'num_heads': {'values': [2]},
+        'num_layers': {'values': [2]},
         'epochs': {'values': [5]},
         'masking': {'values': [False]},
         'self_attending': {'values': [True]},
@@ -107,11 +108,10 @@ def train():
     config = wandb.config
 
     # Set stable parameters
-    NUM_CLASSES = 10
     RANDOM_SEED = 3407    
-    PATCH_SIZE = int(math.sqrt(28 * 28 / config['num_patches']))
+    DIGIT_SIDE = 28
+    PATCH_SIZE = int(math.sqrt(DIGIT_SIDE * DIGIT_SIDE / config['num_patches_per_digit']))
 
-    print(f"NUM_CLASSES: {NUM_CLASSES}")
     print(f"RANDOM_SEED: {RANDOM_SEED}")
     print(f"PATCH SIZE: {PATCH_SIZE}")
 
@@ -152,8 +152,8 @@ def train():
         config['max_sequence_length'],
         config['normalize_dataset'],
         config['rescale_dataset'],
-        cluster_size_min=2,
-        cluster_size_max=2
+        cluster_size_min=1,
+        cluster_size_max=config['max_sequence_length'],
     )
     test_dataset = MNISTDatasetCluster(
         sweep_test_dataset['image'],
@@ -162,27 +162,26 @@ def train():
         config['max_sequence_length'],
         config['normalize_dataset'],
         config['rescale_dataset'],
-        cluster_size_min=2,
-        cluster_size_max=2
+        cluster_size_min=1,
+        cluster_size_max=config['max_sequence_length'],
     )
 
-    print(f"First training image shape: {train_dataset[0][0].shape}")
-    print(f"First training label shape: {train_dataset[0][1].shape}")
+    # Save the variable to avoid the randomness from __get_item__
+    first_training_sample = train_dataset[0]
+
+    print(f"First training image shape: {first_training_sample[0].shape}")
+    print(f"First training label shape: {first_training_sample[1].shape}")
+    print(f"First training label: {first_training_sample[1]}")
 
     # Save first training image to file
-    from PIL import Image
-    first_image = train_dataset[0][0].squeeze().numpy() * 255  # Scale to 0-255 range
+    first_image = first_training_sample[0].numpy() * 255  # Scale to 0-255 range
     Image.fromarray(first_image.astype('uint8')).save('data/raw/first_training_image.png')
 
-    print(f"First training label: {train_dataset[0][1]}")
-
     # Initialize the model
-
     transformer = Transformer(
         emb_dim = config['emb_dim'],
         patch_size = PATCH_SIZE,
-        num_classes = NUM_CLASSES,
-        num_patches_per_digit = config['num_patches'],
+        num_patches_per_digit = config['num_patches_per_digit'],
         num_heads = config['num_heads'],
         num_layers = config['num_layers'],
         encoder_emb_dim = config['encoder_emb_dim'],
@@ -229,28 +228,39 @@ def train():
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
 
-            # Iterate over the batch
-            for i in range(1, len(labels) + 1):
-                # Use the first i labels across the batch
-                sub_labels = labels[:, :i]
+            # Initialize sequence generation
+            max_full_length = config['max_sequence_length'] + 2  # +2 for <start> and <end> tokens
+            current_tensor = torch.full((images.size(0), 1), WORD_TO_INDEX_VOCAB["<start>"], dtype=torch.long).to(device)
+            
+            # Generate sequence
+            for i in range(max_full_length - 1):  # -1 because we already have <start>
+                # Forward pass through transformer
+                logits = transformer(images, current_tensor)  # Shape: [batch_size, num_classes]
                 
-                padding_length = config['max_sequence_length'] - sub_labels.size(1)
-                if padding_length > 0:
-                    pad_token = WORD_TO_INDEX_VOCAB["<pad>"]
-                    padding = torch.full((sub_labels.size(0), padding_length), pad_token, dtype=torch.long, device=sub_labels.device)
-                    sub_labels = torch.cat((sub_labels, padding), dim=1)
-
-                print(f"Sub-labels: {sub_labels}")
-
-                logits = transformer(images, sub_labels)
-
-                loss = loss_fn(logits, labels[:, i+1])
-
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-                total_loss += loss.item()
+                # Get predicted token
+                predicted_tokens = logits.argmax(-1, keepdim=True)  # Shape: [batch_size, 1]
+                
+                if i < labels.size(1):
+                    target = labels[:, i]
+                    # Only calculate loss for actual digit tokens (0-9)
+                    valid_targets = target < 10  # Mask for actual digits
+                    if valid_targets.any():
+                        loss = loss_fn(logits[valid_targets], target[valid_targets])
+                        optimizer.zero_grad()
+                        loss.backward()
+                        optimizer.step()
+                        total_loss += loss.item()
+                    
+                    # Make target 2D to match predicted_tokens shape for concatenation
+                    target = target.view(-1, 1)
+                    current_tensor = torch.cat((current_tensor, target), dim=1)
+                else:
+                    # Use predicted token when we're past the label sequence
+                    current_tensor = torch.cat((current_tensor, predicted_tokens), dim=1)
+                
+                # Check if we've reached max length or all sequences have generated <end> token
+                if ((i + 1) >= max_full_length - 1) or (predicted_tokens == WORD_TO_INDEX_VOCAB["<end>"]).all():
+                    break
 
         avg_train_loss = total_loss / len(train_loader)
 
@@ -265,12 +275,37 @@ def train():
         with torch.no_grad():
             for images, labels in test_loader:
                 images, labels = images.to(device), labels.to(device)
-                logits = transformer(images)
+                
+                # Initialize sequence for testing
+                current_tensor = torch.full((images.size(0), 1), WORD_TO_INDEX_VOCAB["<start>"], dtype=torch.long).to(device)
+                sequence_correct = True
+                
+                # Generate sequence
+                for i in range(config['max_sequence_length'] + 1):  # +1 for <end> token
+                    logits = transformer(images, current_tensor)
 
-                loss = loss_fn(logits, labels)
-                total_loss += loss.item() * labels.size(0)  # Accumulate loss weighted by batch size
-                predictions = logits.argmax(dim=1)
-                correct += (predictions == labels).sum().item()
+                    predicted_tokens = logits.argmax(-1, keepdim=True)
+                    
+                    if i < labels.size(1):
+                        target = labels[:, i]
+                        # Only calculate loss for actual digit tokens (0-9)
+                        valid_targets = target < 10  # Mask for actual digits
+                        if valid_targets.any():
+                            loss = loss_fn(logits[valid_targets], target[valid_targets])
+                            total_loss += loss.item() * valid_targets.sum().item()
+                        # Check if predictions match labels (only for digit tokens)
+                        # Make target 2D to match predicted_tokens shape
+                        target = target.view(-1, 1)
+                        sequence_correct = sequence_correct & ((predicted_tokens == target) | (target >= 10))
+                    
+                    current_tensor = torch.cat((current_tensor, predicted_tokens), dim=1)
+                    
+                    # Stop if <end> token predicted
+                    if (predicted_tokens == WORD_TO_INDEX_VOCAB["<end>"]).all():
+                        break
+                
+                # A sequence is correct only if all tokens matched
+                correct += sequence_correct.all(dim=-1).sum().item()
                 total += labels.size(0)
 
         accuracy = correct / total

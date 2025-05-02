@@ -48,23 +48,25 @@ class Transformer(torch.nn.Module):
             output_mechanism
         ):
         super(Transformer, self).__init__()
-        
-
-        # In the encoder, the 
 
         self.encoder = Encoder(emb_dim, patch_size, num_patches_per_digit * max_sequence_length, num_heads, num_layers, encoder_emb_dim, masking, self_attending)
 
+        # For decoder, we need to account for start and end tokens in max length
+        actual_max_length = max_sequence_length + 2  # +2 for <start> and <end> tokens
+        
+        # Ensure decoder layers maintain consistent embedding dimensions
         self.layers = torch.nn.ModuleList([
             torch.nn.ModuleDict({
                 "output_embedding": OutputEmbedding(decoder_emb_dim, output_vocab_size),
-                "positional_encoding": PositionalEncoding(decoder_emb_dim, max_sequence_length),
-                "multi_head_attention_1": MultiHeadAttention(num_heads, decoder_emb_dim, decoder_emb_dim, internal_decoder_emb_dim, True, self_attending),
-                "multi_head_attention_2": MultiHeadAttention(num_heads, emb_dim, decoder_emb_dim, internal_decoder_emb_dim, False, self_attending),
-                "feed_forward": FeedForward(emb_dim),
+                "positional_encoding": PositionalEncoding(decoder_emb_dim, actual_max_length),
+                "multi_head_attention_1": MultiHeadAttention(num_heads, decoder_emb_dim, decoder_emb_dim, decoder_emb_dim, True, self_attending),
+                "multi_head_attention_2": MultiHeadAttention(num_heads, decoder_emb_dim, emb_dim, decoder_emb_dim, False, self_attending),
+                "feed_forward": FeedForward(decoder_emb_dim),
             }) for _ in range(num_layers)
         ])
 
-        self.output_layer = OutputLayer(emb_dim, num_classes, output_mechanism)
+        # Output layer should match the vocabulary size exactly
+        self.output_layer = OutputLayer(decoder_emb_dim, output_vocab_size, output_mechanism)
 
     def forward(self, inputs_x, outputs_x):
         inputs_x = self.encoder(inputs_x)
@@ -124,6 +126,7 @@ class InputEmbedding(torch.nn.Module):
 class OutputEmbedding(torch.nn.Module):
     def __init__(self, emb_dim, vocab_size):
         super(OutputEmbedding, self).__init__()
+        # Use exact vocab_size since indices are 0 through vocab_size-1
         self.embedding = torch.nn.Embedding(vocab_size, emb_dim)
         
         # Initialize weights using normal distribution
@@ -180,22 +183,20 @@ class MultiHeadAttention(torch.nn.Module):
 
     def forward(self, x, encoder_input=None):
         input = x
-
-        # Normalize x
         x = self.layer_norm(x)
-
         batch_size, seq_len, _ = x.size()
 
-        # Use encoder_input for wQ if provided, otherwise use x
-        q_input = encoder_input if encoder_input is not None else x
-        q = self.wQ(q_input).view(batch_size, seq_len, self.num_heads, self.internal_emb_dim).transpose(1, 2)
-
-        # Use x for wK and wV
-        k = self.wK(x).view(batch_size, seq_len, self.num_heads, self.internal_emb_dim).transpose(1, 2)
-        v = self.wV(x).view(batch_size, seq_len, self.num_heads, self.internal_emb_dim).transpose(1, 2)
+        # Use encoder_input for K,V if provided, otherwise use x
+        kv_input = encoder_input if encoder_input is not None else x
+        kv_batch_size, kv_seq_len, _ = kv_input.size()
+        
+        # Project and reshape Q, K, V with their respective sequence lengths
+        q = self.wQ(x).view(batch_size, seq_len, self.num_heads, self.internal_emb_dim).transpose(1, 2)
+        k = self.wK(kv_input).view(kv_batch_size, kv_seq_len, self.num_heads, self.internal_emb_dim).transpose(1, 2)
+        v = self.wV(kv_input).view(kv_batch_size, kv_seq_len, self.num_heads, self.internal_emb_dim).transpose(1, 2)
 
         # Calculate attention scores from Q * K^T
-        scores = q @ k.transpose(-2, -1) / (math.sqrt(self.internal_emb_dim))
+        scores = q @ k.transpose(-2, -1) / math.sqrt(self.internal_emb_dim)
 
         if self.masking:
             if self.self_attending:
@@ -213,10 +214,11 @@ class MultiHeadAttention(torch.nn.Module):
                 scores = torch.where(torch.isinf(scores), torch.zeros_like(scores), scores)
 
         a = F.softmax(scores, dim=-1)
-
         h = a @ v
+        
+        # Reshape back to original dimensions
         h = h.transpose(1, 2).contiguous().view(batch_size, seq_len, -1)
-
+        
         return self.w0(h) + input  # Residual connection
 
 class OutputLayer(torch.nn.Module):

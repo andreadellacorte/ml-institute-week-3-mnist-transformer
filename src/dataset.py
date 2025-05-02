@@ -74,6 +74,11 @@ class MNISTDatasetCluster(torch.utils.data.Dataset):
         if current_width < target_width:
             padding = np.zeros((28, target_width - current_width))
             image = np.concatenate((image, padding), axis=1)
+            
+            # Calculate how many pad tokens we need (one for each digit-width of padding)
+            num_pad_tokens = (target_width - current_width) // 28
+            pad_token = self.word_to_index["<pad>"]
+            cluster_labels = np.concatenate((cluster_labels, [pad_token] * num_pad_tokens))
         elif current_width > target_width:
             raise ValueError(f"Image width {current_width} exceeds target width {target_width}. " +
                            f"Cluster size: {cluster_size}, Cluster indices: {cluster_indices}")
@@ -81,7 +86,11 @@ class MNISTDatasetCluster(torch.utils.data.Dataset):
         # Check that image has the correct dimensions
         if image.shape != (28, self.max_sequence_length * 28):
             raise ValueError(f"Final image shape is {image.shape}, expected (28, {self.max_sequence_length*28}). " +
-                           f"Started with {len(reshaped_images)} images of shapes {[img.shape for img in reshaped_images]}")
+                           f"Started with {len(cluster_images)} images of shapes {[img.shape for img in cluster_images]}")
+        
+        # add end token at beginning of cluster_labels
+        # start_token = self.word_to_index["<start>"]
+        # cluster_labels = np.concatenate(([start_token], cluster_labels))
 
         # add end token at beginning of cluster_labels
         end_token = self.word_to_index["<end>"]
