@@ -174,7 +174,7 @@ def train():
     print(f"First training label: {first_training_sample[1]}")
 
     # Save first training image to file
-    first_image = first_training_sample[0].numpy() * 255  # Scale to 0-255 range
+    first_image = first_training_sample[0].cpu().numpy() * 255  # Scale to 0-255 range
     Image.fromarray(first_image.astype('uint8')).save('data/raw/first_training_image.png')
 
     # Initialize the model
