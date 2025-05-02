@@ -34,7 +34,6 @@ class Transformer(torch.nn.Module):
             self,
             emb_dim,
             patch_size,
-            num_classes,
             num_patches_per_digit,
             num_heads,
             num_layers,
@@ -54,13 +53,15 @@ class Transformer(torch.nn.Module):
         # For decoder, we need to account for start and end tokens in max length
         actual_max_length = max_sequence_length + 2  # +2 for <start> and <end> tokens
         
+        # Move embedding and positional encoding outside layers
+        self.output_embedding = OutputEmbedding(decoder_emb_dim, output_vocab_size)
+        self.positional_encoding = PositionalEncoding(decoder_emb_dim, actual_max_length)
+        
         # Ensure decoder layers maintain consistent embedding dimensions
         self.layers = torch.nn.ModuleList([
             torch.nn.ModuleDict({
-                "output_embedding": OutputEmbedding(decoder_emb_dim, output_vocab_size),
-                "positional_encoding": PositionalEncoding(decoder_emb_dim, actual_max_length),
-                "multi_head_attention_1": MultiHeadAttention(num_heads, decoder_emb_dim, decoder_emb_dim, decoder_emb_dim, True, self_attending),
-                "multi_head_attention_2": MultiHeadAttention(num_heads, decoder_emb_dim, emb_dim, decoder_emb_dim, False, self_attending),
+                "multi_head_attention_1": MultiHeadAttention(num_heads, decoder_emb_dim, decoder_emb_dim, internal_decoder_emb_dim, True, self_attending),
+                "multi_head_attention_2": MultiHeadAttention(num_heads, decoder_emb_dim, emb_dim, internal_decoder_emb_dim, False, self_attending),
                 "feed_forward": FeedForward(decoder_emb_dim),
             }) for _ in range(num_layers)
         ])
@@ -70,10 +71,12 @@ class Transformer(torch.nn.Module):
 
     def forward(self, inputs_x, outputs_x):
         inputs_x = self.encoder(inputs_x)
+        
+        # Apply embedding and positional encoding once before the layers
+        outputs_x = self.output_embedding(outputs_x)
+        outputs_x = self.positional_encoding(outputs_x)
 
         for layer in self.layers:
-            outputs_x = layer["output_embedding"](outputs_x)
-            outputs_x = layer["positional_encoding"](outputs_x)
             outputs_x = layer["multi_head_attention_1"](outputs_x)
             outputs_x = layer["multi_head_attention_2"](outputs_x, inputs_x)
             outputs_x = layer["feed_forward"](outputs_x)
