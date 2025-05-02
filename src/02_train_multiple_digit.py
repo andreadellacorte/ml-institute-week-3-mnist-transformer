@@ -10,7 +10,6 @@ import wandb
 import time
 import math
 import matplotlib.pyplot as plt
-import os
 
 # Define the sweep configuration    
 sweep_config_full = {
@@ -21,27 +20,27 @@ sweep_config_full = {
     },
     'parameters': {
         'dataset_type': {'values': ['huggingface']},
-        'train_dataset_size': {'values': ['1000']},
-        'test_dataset_size': {'values': ['100']},
+        'train_dataset_size': {'values': ['full']},
+        'test_dataset_size': {'values': ['full']},
         'normalize_dataset': {'values': [True]},
         'rescale_dataset': {'values': [True]},
         'batch_size': {'values': [512]},
-        'emb_dim': {'values': [16, 32, 64, 128]},
-        'encoder_emb_dim': {'values': [16, 32, 64, 128]},
-        'decoder_emb_dim': {'values': [16, 32, 64, 128]},
-        'internal_decoder_emb_dim': {'values': [16, 32, 64, 128]},
+        'emb_dim': {'values': [8, 16]},
+        'encoder_emb_dim': {'values': [8]},
+        'decoder_emb_dim': {'values': [8]},
+        'internal_decoder_emb_dim': {'values': [8]},
         'max_sequence_length': {'values': [4]},
         'cluster_size_min' : {'values': [1]},
         'learning_rate': {'values': [0.001]},
-        'weight_decay': {'values': [0.0, 0.01]},
-        'num_patches_per_digit': {'values': [4, 16]},
+        'weight_decay': {'values': [0.0]},
+        'num_patches_per_digit': {'values': [4]},
         'output_mechanism' : {'values': ['mean']},
-        'num_heads': {'values': [1, 2, 4, 8, 16]},
-        'num_layers': {'values': [1, 2, 4, 8, 16]},
+        'num_heads': {'values': [16]},
+        'num_layers': {'values': [1]},
         'epochs': {'values': [5]},
         'masking_encoder': {'values': [True, False]},
-        'self_attending_encoder': {'values': [True, False]},
-        'self_attending_decoder': {'values': [True, False]}
+        'self_attending_encoder': {'values': [True]},
+        'self_attending_decoder': {'values': [True]}
     }
 }
 
