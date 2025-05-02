@@ -54,6 +54,17 @@ class MNISTDatasetCluster(torch.utils.data.Dataset):
         self.rescale = rescale
         self.cluster_size_min = cluster_size_min
         self.cluster_size_max = cluster_size_max or max_sequence_length
+
+        if cluster_size_min < 1 or cluster_size_min > cluster_size_max:
+            raise ValueError("cluster_size_min must be >= 1 and <= cluster_size_max")
+
+        if rescale:
+            self.images = self.images / 255.0
+
+        if normalize:
+            self.mean = np.mean(self.images)
+            self.std = np.std(self.images)
+            self.images = (self.images - self.mean) / self.std
         
         # Check if CUDA is available
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -71,12 +82,6 @@ class MNISTDatasetCluster(torch.utils.data.Dataset):
         # Get the images and labels for this cluster
         cluster_images = [self.images[i] for i in cluster_indices]
         cluster_labels = [self.labels[i] for i in cluster_indices]
-        
-        # Process images
-        if self.normalize:
-            cluster_images = [img / 255.0 for img in cluster_images]
-        if self.rescale:
-            cluster_images = [(img - 0.5) / 0.5 for img in cluster_images]
         
         # Concatenate images horizontally
         image = np.concatenate(cluster_images, axis=2)
