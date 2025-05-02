@@ -204,10 +204,10 @@ class MultiHeadAttention(torch.nn.Module):
         if self.masking:
             if self.self_attending:
                 # Don't mask the diagonal to -inf
-                mask = torch.tril(torch.ones(scores.size(-2), scores.size(-1)), diagonal=-1).bool()
+                mask = torch.tril(torch.ones(scores.size(-2), scores.size(-1), device=scores.device), diagonal=-1).bool()
             else:
                 # Mask the diagonal to -inf
-                mask = torch.tril(torch.ones(scores.size(-2), scores.size(-1))).bool()
+                mask = torch.tril(torch.ones(scores.size(-2), scores.size(-1), device=scores.device)).bool()
 
             scores = scores.masked_fill(mask, float('-inf'))
 
