@@ -54,13 +54,6 @@ def get_torchvision_mnist():
         'label': [int(test.targets[i]) for i in range(len(test))]
     }
 
-    # print ("Train data size:", len(train_data['image']))
-    # print ("Test data size:", len(test_data['image']))
-    # print the first 5 images and labels
-    for i in range(5):
-        print(f"Train Image {i}: {train_data['image'][i]}")
-        print(f"Train Label {i}: {train_data['label'][i]}")
-    
     # clear_mnist_cache()
 
     return train_data, test_data
